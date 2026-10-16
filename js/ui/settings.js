@@ -55,10 +55,11 @@ export async function render(app) {
   rate.addEventListener('input', () => { s.tts.rate = parseFloat(rate.value); rateOut.textContent = `${s.tts.rate.toFixed(2)}×`; });
   rate.addEventListener('change', save);
   const speechSection = section('Speech',
+    toggle('Play card audio automatically', s.tts.autoplay !== false, async (v) => { s.tts.autoplay = v; await save(); }, 'Sound files and {{tts}} in the card play when it is shown, like Anki. Tap ▶ on a card to replay.'),
     ttsSupported ? [
-      toggle('Read cards aloud', s.tts.enabled, async (v) => { s.tts.enabled = v; await save(); }, 'Reads the question, then the answer. Cloze gaps are read as “blank”. Also a 🔊 button on the review screen.'),
+      toggle('Read cards aloud', s.tts.enabled, async (v) => { s.tts.enabled = v; await save(); }, 'For cards without their own audio: reads the question, then the answer. Cloze gaps are read as “blank”. Also a 🔊 button on the review screen.'),
       toggle('Also read the answer', s.tts.readAnswer, async (v) => { s.tts.readAnswer = v; await save(); }),
-      h('label', { class: 'field' }, h('span', {}, 'Voice'), voiceSel, h('p', { class: 'hint-text' }, 'Templates with {{tts te_IN:Field}} choose a voice for that language automatically.')),
+      h('label', { class: 'field' }, h('span', {}, 'Voice'), voiceSel, h('p', { class: 'hint-text' }, 'Used for English and other Latin-script text. Telugu, Hindi, Tamil, Japanese and other scripts get a voice for their language automatically, as do templates with {{tts te_IN:Field}}.')),
       h('div', { class: 'field' }, h('span', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: 600, color: 'var(--muted)' } }, 'Speaking rate', rateOut), rate),
       h('div', { class: 'row', style: { padding: '0 0 8px' } }, h('button', { class: 'btn', type: 'button', onclick: () => speak('This is how cards will sound.', { voiceURI: s.tts.voiceURI, rate: s.tts.rate }) }, 'Test voice')),
       number('Hands-free: show the answer after (seconds)', s.tts.autoRevealSecs, { min: 0, max: 60 }, async (v) => { s.tts.autoRevealSecs = v; await save(); }, '0 = off. Counts from when the question has been read.'),

@@ -4,7 +4,7 @@
 
 import { renderTemplate } from './template.js';
 import { renderCloze } from './cloze.js';
-import { stripHtml, escapeHtml, soundRefs } from './html.js';
+import { stripHtml, escapeHtml, avRefs, markFrontAv, stripAnkiTts } from './html.js';
 import { fieldMap, KIND_CLOZE } from '../model/notetypes.js';
 
 /** Remove scripts, event handlers, javascript: URLs and other active content. */
@@ -19,7 +19,10 @@ export function sanitizeHtml(html) {
 
 /**
  * Render both sides of a card.
- * Returns { q, a, css, typeAnswer, qText, aText, qSounds, aSounds }
+ * Returns { q, a, css, typeAnswer, qText, aText, searchText, qAv, aAv, qLang, aLang }
+ *   qAv / aAv: the side's own audio and TTS, in order, for autoplay (see avRefs).
+ *   qText / aText: what "read cards aloud" says when a side has no audio of its own;
+ *   aText leaves out {{FrontSide}} so the question isn't read twice.
  */
 export function renderCard({ card, note, notetype, deckName = '', typed = '' }) {
   const fields = fieldMap(notetype, note);
@@ -30,7 +33,8 @@ export function renderCard({ card, note, notetype, deckName = '', typed = '' }) 
     cardName: tmpl.name, flag: card.flags & 7,
   };
   const q = renderTemplate(tmpl.qfmt, { ...base, side: 'q' });
-  const a = renderTemplate(tmpl.afmt, { ...base, side: 'a', frontSide: stripTypeInput(q.html), typed });
+  const a = renderTemplate(tmpl.afmt, { ...base, side: 'a', frontSide: markFrontAv(stripTypeInput(q.html)), typed });
+  const aOwn = renderTemplate(tmpl.afmt, { ...base, side: 'a', frontSide: '', typed });
   const qHtml = sanitizeHtml(q.html);
   const aHtml = sanitizeHtml(a.html);
   return {
@@ -39,10 +43,10 @@ export function renderCard({ card, note, notetype, deckName = '', typed = '' }) 
     css: notetype.css || '',
     typeAnswer: q.typeAnswer || a.typeAnswer,
     qText: isCloze ? clozeQuestionText(note, notetype, card, 'blank') : speakableText(qHtml),
-    aText: speakableText(answerOnlyHtml(aHtml)),
+    aText: speakableText(answerOnlyHtml(sanitizeHtml(aOwn.html))),
     searchText: isCloze ? clozeQuestionText(note, notetype, card, '').slice(0, 300) : searchText(qHtml),
-    qSounds: soundRefs(q.html),
-    aSounds: soundRefs(answerOnlyHtml(a.html)),
+    qAv: avRefs(qHtml),
+    aAv: avRefs(aHtml),
     qLang: q.ttsLang,
     aLang: a.ttsLang || q.ttsLang,
   };
@@ -60,8 +64,9 @@ export function answerOnlyHtml(aHtml) {
 
 export function speakableText(html) {
   return stripHtml(
-    String(html || '')
-      .replace(/\[sound:[^\]]+\]/g, ' ')
+    stripAnkiTts(html)
+      .replace(/\[sound(-front)?:[^\]]+\]/g, ' ')
+      .replace(/<tts\b[^>]*>[\s\S]*?<\/tts>/gi, ' ')
       .replace(/<span class="cloze"[^>]*>\[(?:\.\.\.|[^\]]*)\]<\/span>/g, ' blank ')
       .replace(/<(br|div|p|li|tr|h\d)[^>]*>/gi, '. ')
   )
@@ -74,8 +79,8 @@ export function speakableText(html) {
 
 function searchText(html) {
   return stripHtml(
-    String(html || '')
-      .replace(/\[sound:[^\]]+\]/g, ' ')
+    stripAnkiTts(html)
+      .replace(/\[sound(-front)?:[^\]]+\]/g, ' ')
       .replace(/<span class="cloze"[^>]*>[\s\S]*?<\/span>/g, ' ')
       .replace(/<(br|div|p|li)[^>]*>/gi, ' ')
   )
@@ -113,7 +118,12 @@ a.hint{display:inline-block;padding:10px 4px;color:#1565c0}
 export function prepareMediaHtml(html) {
   let i = 0;
   return html
-    .replace(/\[sound:([^\]]+)\]/g, (_, f) => `<button type="button" class="sound-btn" data-sound="${escapeHtml(f)}" data-idx="${i++}" aria-label="Play audio">▶</button>`)
+    .replace(/\[sound(?:-front)?:([^\]]+)\]/g, (_, f) => `<button type="button" class="sound-btn" data-sound="${escapeHtml(f)}" data-idx="${i++}" aria-label="Play audio">▶</button>`)
+    .replace(/\[anki:tts(?:-front)?([^\]]*)\]([\s\S]*?)\[\/anki:tts\]/gi, (_, attrs, body) => {
+      const item = avRefs(`[anki:tts${attrs}]${body}[/anki:tts]`)[0];
+      if (!item) return '';
+      return `<button type="button" class="sound-btn" data-tts="${escapeHtml(item.text)}" data-tts-lang="${escapeHtml(item.lang || '')}" data-tts-speed="${item.speed}" aria-label="Speak">▶</button>`;
+    })
     .replace(/(<(?:img|audio|source|video)\b[^>]*?)\ssrc=(["']?)([^"'>\s]+)\2/gi, (m, pre, q, src) => {
       if (/^(?:https?:|data:|blob:)/i.test(src)) return m;
       return `${pre} data-media="${escapeHtml(src)}"`;

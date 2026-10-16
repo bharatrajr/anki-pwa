@@ -23,7 +23,7 @@ const DEFAULT_SETTINGS = {
   showIntervals: true,
   showRemaining: true,
   backupReminderDays: 7,
-  tts: { enabled: false, voiceURI: '', rate: 1, autoRevealSecs: 0, readAnswer: true },
+  tts: { enabled: false, voiceURI: '', rate: 1, autoRevealSecs: 0, readAnswer: true, autoplay: true },
   voice: { enabled: false, lang: 'en-US' },
   keepAwake: true, // while reading aloud / listening
 };

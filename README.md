@@ -2,7 +2,7 @@
 
 AnkiPWA is an offline flashcard app for your browser. It schedules reviews with FSRS, the same algorithm current Anki uses, and works the same way Anki does. You install it on Android or iPhone from a GitHub Pages site. It needs no account or server, and your cards never leave your device.
 
-> **Status: all five milestones are built (v0.2.1).** Study with FSRS or SM-2; import and export Anki decks and collections with progress and media; import spreadsheets, Quizlet and JSON; read cards aloud and answer by voice; search and bulk-edit cards; see statistics; and do custom study. See the [roadmap](#roadmap).
+> **Status: all five milestones are built (v0.2.2).** Study with FSRS or SM-2; import and export Anki decks and collections with progress and media; import spreadsheets, Quizlet and JSON; read cards aloud and answer by voice; search and bulk-edit cards; see statistics; and do custom study. See the [roadmap](#roadmap).
 >
 > AnkiPWA is an independent project and is not affiliated with Anki or AnkiWeb.
 
@@ -46,7 +46,9 @@ AnkiPWA is an offline flashcard app for your browser. It schedules reviews with 
   - Packages use Anki's "support older versions" layout, which every current Anki client imports. FSRS memory state travels in each card, so Anki continues where you left off.
   - Anki `.txt` (with GUID, note type, deck and tags columns) and CSV for spreadsheets.
 - **Speech**
-  - Read cards aloud with a voice picker and speaking rate. Cloze gaps are read as "blank", and `{{tts te_IN:Field}}` picks a voice for that language.
+  - Card audio plays like Anki: `[sound:]` files, `{{tts en_US:Field}}` (with `speed=`) and AnkiDroid's `<tts voice="en_US">` tags are spoken once, in order, with a ▶ button to replay. The answer doesn't replay the question's audio.
+  - Read cards aloud (for cards without their own audio) with a voice picker and speaking rate. The answer is read without repeating the question, and cloze gaps are read as "blank".
+  - Each writing system gets a matching voice: on a card with English and Telugu, each part is read in its own language. This also covers Hindi, Tamil, Japanese, Chinese, Korean, Arabic, Russian and more.
   - Hands-free: the answer is shown automatically a set number of seconds after the question has been read.
   - Answer by voice: say "show", then "again", "hard", "good" or "easy" (or one to four); "undo" and "repeat" also work.
   - The screen stays awake while reading aloud or listening.

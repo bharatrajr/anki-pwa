@@ -1,6 +1,6 @@
 // Anki card-template rendering for the common syntax:
 // {{Field}}, {{FrontSide}}, {{#F}}…{{/F}}, {{^F}}…{{/F}}, {{text:F}}, {{hint:F}},
-// {{type:F}}, {{type:cloze:F}}, {{cloze:F}}, {{cloze-only:F}}, {{tts …:F}} (text kept),
+// {{type:F}}, {{type:cloze:F}}, {{cloze:F}}, {{cloze-only:F}}, {{tts lang:F}} (→ [anki:tts] tag),
 // special fields Tags/Type/Deck/Subdeck/Card/CardFlag. Unknown filters pass content through.
 
 import { renderCloze, clozeOnly } from './cloze.js';
@@ -120,11 +120,15 @@ function applyFilter(filter, value, ctx, state = {}) {
       return `<a class="hint" href="#" data-hint="${id}">Show hint</a><div id="${id}" class="hint" style="display:none">${value}</div>`;
     }
     case 'tts': {
-      // {{tts te_IN:Field}}: the app's read-aloud uses this language for the side.
-      const lang = filter.split(/\s+/)[1];
+      // {{tts te_IN speed=1.2:Field}} becomes Anki's [anki:tts] tag: shown as a play button
+      // and spoken with the card's audio, not printed as text.
+      const [, lang = '', ...opts] = filter.split(/\s+/);
       if (lang && !state.ttsLang) state.ttsLang = lang.replace('_', '-');
-      return value;
+      if (fieldIsEmpty(value)) return '';
+      return `[anki:tts lang=${lang}${opts.length ? ' ' + opts.join(' ') : ''}]${value}[/anki:tts]`;
     }
+    case 'tts-voices':
+      return '';
     case 'kana':
       return value.replace(/ ?([^ >]+?)\[(.+?)\]/g, '$2');
     case 'kanji':

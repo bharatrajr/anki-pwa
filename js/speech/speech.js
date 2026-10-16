@@ -20,42 +20,91 @@ export function getVoices() {
   });
 }
 
-function pickVoice(voices, voiceURI, lang) {
-  if (lang) {
-    const l = lang.toLowerCase();
-    const exact = voices.find((v) => v.lang.toLowerCase().replace('_', '-') === l);
-    const base = voices.find((v) => v.lang.toLowerCase().startsWith(l.split('-')[0]));
-    // A language named by the card template wins over the chosen voice if they differ.
-    const chosen = voices.find((v) => v.voiceURI === voiceURI);
-    if (chosen && chosen.lang.toLowerCase().startsWith(l.split('-')[0])) return chosen;
-    if (exact || base) return exact || base;
+/** Best voice: the chosen one if it speaks `lang`, else one for `lang`, else (no lang) the chosen one. */
+export function pickVoice(voices, voiceURI, lang) {
+  const chosen = voices.find((v) => v.voiceURI === voiceURI) || null;
+  if (!lang) return chosen;
+  const l = lang.toLowerCase();
+  const base = l.split('-')[0];
+  const vl = (v) => v.lang.toLowerCase().replace('_', '-');
+  if (chosen && vl(chosen).split('-')[0] === base) return chosen;
+  const matches = voices.filter((v) => vl(v) === l).concat(voices.filter((v) => vl(v) !== l && vl(v).split('-')[0] === base));
+  // Prefer voices that work offline.
+  return matches.find((v) => v.localService) || matches[0] || null;
+}
+
+// Scripts that tell us the language when a card doesn't say (Latin text uses the chosen voice).
+const SCRIPTS = [
+  ['Telugu', 'te-IN'], ['Devanagari', 'hi-IN'], ['Tamil', 'ta-IN'], ['Kannada', 'kn-IN'], ['Malayalam', 'ml-IN'],
+  ['Bengali', 'bn-IN'], ['Gujarati', 'gu-IN'], ['Gurmukhi', 'pa-IN'], ['Oriya', 'or-IN'], ['Sinhala', 'si-LK'],
+  ['Arabic', 'ar-SA'], ['Hebrew', 'he-IL'], ['Thai', 'th-TH'], ['Hangul', 'ko-KR'], ['Hiragana', 'ja-JP'], ['Katakana', 'ja-JP'],
+  ['Han', 'zh-CN'], ['Cyrillic', 'ru-RU'], ['Greek', 'el-GR'], ['Georgian', 'ka-GE'], ['Armenian', 'hy-AM'], ['Ethiopic', 'am-ET'],
+  ['Khmer', 'km-KH'], ['Lao', 'lo-LA'], ['Myanmar', 'my-MM'],
+].map(([s, lang]) => [new RegExp(`\\p{Script=${s}}`, 'u'), lang]);
+const LETTER = /\p{L}/u;
+
+/**
+ * Split text into runs by writing system: "dog కుక్క" → [{text:'dog', lang:null}, {text:'కుక్క', lang:'te-IN'}].
+ * Spaces, digits and punctuation stay with the run they follow. Japanese text with kanji stays Japanese.
+ */
+export function splitByScript(text) {
+  const runs = [];
+  const japanese = /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text);
+  for (const ch of String(text)) {
+    let lang;
+    if (!LETTER.test(ch)) lang = undefined;
+    else {
+      lang = null;
+      for (const [re, l] of SCRIPTS) if (re.test(ch)) { lang = l === 'zh-CN' && japanese ? 'ja-JP' : l; break; }
+    }
+    const last = runs[runs.length - 1];
+    if (last && (lang === undefined || last.lang === lang || last.lang === undefined)) {
+      last.text += ch;
+      if (last.lang === undefined && lang !== undefined) last.lang = lang;
+    } else runs.push({ text: ch, lang });
   }
-  return voices.find((v) => v.voiceURI === voiceURI) || null;
+  // Brackets and quotes left dangling at a run's edges ("కుక్క (" + "kukka)") are dropped.
+  const tidy = (s) => {
+    for (const [o, c] of [['(', ')'], ['[', ']'], ['{', '}']]) {
+      if (!s.includes(o)) s = s.split(c).join('');
+      if (!s.includes(c)) s = s.split(o).join('');
+    }
+    return s.trim().replace(/^["”’»]+\s*/u, '').replace(/\s*["“‘«]+$/u, '').trim();
+  };
+  return runs.map((r) => ({ text: tidy(r.text), lang: r.lang ?? null })).filter((r) => /[\p{L}\p{N}]/u.test(r.text));
 }
 
 let speakToken = 0;
-/** Speak text; resolves when finished, cancelled or failed. */
+/**
+ * Speak text; resolves when finished, cancelled or failed. `lang` (from a {{tts}} tag) applies
+ * to all of it; otherwise each writing system in the text gets a matching voice.
+ */
 export async function speak(text, { voiceURI = '', rate = 1, lang = null } = {}) {
   if (!ttsSupported || !text) return;
   const token = ++speakToken;
   synth.cancel();
   const voices = await getVoices();
   if (token !== speakToken) return;
-  // Long text is split into sentences: some engines stop after ~200 characters.
-  const parts = String(text).match(/[^.!?。！？\n]+[.!?。！？]?/g) || [text];
-  for (const part of parts) {
-    if (token !== speakToken) return;
-    if (!part.trim()) continue;
-    await new Promise((resolve) => {
-      const u = new SpeechSynthesisUtterance(part.trim());
-      const v = pickVoice(voices, voiceURI, lang);
-      if (v) { u.voice = v; u.lang = v.lang; } else if (lang) u.lang = lang;
-      u.rate = rate;
-      u.onend = u.onerror = () => resolve();
-      synth.speak(u);
-      // Safety net: some engines never fire onend.
-      setTimeout(resolve, Math.max(4000, part.length * 180 / rate));
-    });
+  const runs = lang ? [{ text: String(text), lang }] : splitByScript(text);
+  for (const run of runs) {
+    const v = pickVoice(voices, voiceURI, run.lang);
+    // Long text is split into sentences: some engines stop after ~200 characters.
+    const parts = run.text.match(/[^.!?।॥。！？\n]+[.!?।॥。！？]?/g) || [run.text];
+    for (const part of parts) {
+      if (token !== speakToken) return;
+      if (!part.trim()) continue;
+      await new Promise((resolve) => {
+        const u = new SpeechSynthesisUtterance(part.trim());
+        if (v) { u.voice = v; u.lang = v.lang; } else if (run.lang) u.lang = run.lang; // the engine picks a voice for the language
+        u.rate = rate;
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        u.onend = u.onerror = finish;
+        synth.speak(u);
+        // Safety net: some engines never fire onend.
+        setTimeout(finish, Math.max(4000, (part.length * 200) / rate));
+      });
+    }
   }
 }
 

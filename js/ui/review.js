@@ -120,7 +120,13 @@ export async function render(app, [idStr]) {
     doc.addEventListener('click', (e) => {
       const t = e.target;
       const sound = t.closest?.('[data-sound]');
-      if (sound) { e.preventDefault(); playSounds([sound.getAttribute('data-sound')]); return; }
+      if (sound) { e.preventDefault(); state.seq++; stopListening(); playAv([{ kind: 'sound', file: sound.getAttribute('data-sound') }]); return; }
+      const tts = t.closest?.('[data-tts]');
+      if (tts) {
+        e.preventDefault(); state.seq++; stopListening();
+        playAv([{ kind: 'tts', text: tts.getAttribute('data-tts'), lang: tts.getAttribute('data-tts-lang') || null, speed: parseFloat(tts.getAttribute('data-tts-speed')) || 1 }]);
+        return;
+      }
       const hint = t.closest?.('a.hint[data-hint]');
       if (hint) { e.preventDefault(); const d = doc.getElementById(hint.dataset.hint); if (d) { d.style.display = 'block'; hint.style.display = 'none'; fitFrame(frame); } return; }
       const link = t.closest?.('a[href]');
@@ -230,25 +236,35 @@ export async function render(app, [idStr]) {
     }
   }
 
-  // ---------- audio ----------
-  let soundQueue = [];
-  let soundsDone = null;
-  /** Play [sound:] files in order; resolves when all have played (or failed). */
-  function playSounds(names) {
-    soundQueue = [...names];
+  // ---------- audio: the card's sound files and TTS tags, in order ----------
+  let avToken = 0;
+  let finishFile = null;
+  /** Play items ({kind:'sound', file} | {kind:'tts', text, lang, speed}); resolves when done or interrupted. */
+  async function playAv(items) {
+    const token = ++avToken;
+    finishFile?.();
     audio.pause();
-    soundsDone?.();
-    return new Promise((resolve) => { soundsDone = resolve; playNextSound(); });
+    for (const it of items) {
+      if (token !== avToken) return;
+      if (it.kind === 'sound') await playFile(it.file);
+      else await speak(it.text, { lang: it.lang, voiceURI: speech.voiceURI, rate: speech.rate * (it.speed || 1) });
+    }
   }
-  async function playNextSound() {
-    const name = soundQueue.shift();
-    if (!name) { soundsDone?.(); soundsDone = null; return; }
+  async function playFile(name) {
     const url = await getMediaUrl(name);
-    if (!url) { toast(`Missing audio: ${name}`); return playNextSound(); }
-    audio.src = url;
-    audio.onended = () => playNextSound();
-    audio.onerror = () => playNextSound();
-    audio.play().catch(() => playNextSound()); // autoplay may be blocked until the first tap
+    if (!url) { toast(`Missing audio: ${name}`); return; }
+    await new Promise((resolve) => {
+      finishFile = () => { finishFile = null; resolve(); };
+      audio.src = url;
+      audio.onended = audio.onerror = () => finishFile?.();
+      audio.play().catch(() => finishFile?.()); // autoplay may be blocked until the first tap
+    });
+  }
+  function stopAv() {
+    avToken++;
+    audio.pause();
+    finishFile?.();
+    stopSpeaking();
   }
 
   // ---------- read aloud, hands-free reveal, voice grading ----------
@@ -257,22 +273,27 @@ export async function render(app, [idStr]) {
     state.listener = null;
     micChip?.classList.remove('live');
   }
-  /** Sounds, then read aloud, then auto-reveal / listen for a command. Restarted on every side change. */
+  /**
+   * The side's own audio/TTS (like Anki's autoplay), or else "read cards aloud", then
+   * auto-reveal / listen for a command. Restarted on every side change, so nothing doubles up.
+   */
   async function runSpeech() {
     const seq = ++state.seq;
     clearTimeout(state.revealTimer);
     stopListening();
-    stopSpeaking();
+    stopAv();
     if (!state.card || !state.rendered) return;
     const answerSide = state.revealed;
     const r = state.rendered;
-    await playSounds(answerSide ? r.aSounds : r.qSounds);
-    if (seq !== state.seq) return;
-    if (speech.enabled && (!answerSide || speech.readAnswer)) {
+    const own = answerSide ? r.aAv : r.qAv;
+    if (own.length) {
+      // A card with its own audio or {{tts}} speaks for itself; reading the text too would repeat it.
+      if (speech.autoplay !== false) await playAv(own);
+    } else if (speech.enabled && (!answerSide || speech.readAnswer)) {
       await speak(answerSide ? r.aText : r.qText, { voiceURI: speech.voiceURI, rate: speech.rate, lang: answerSide ? r.aLang : r.qLang });
-      if (seq !== state.seq) return;
     }
-    if (!answerSide && speech.enabled && speech.autoRevealSecs > 0) {
+    if (seq !== state.seq) return;
+    if (!answerSide && (speech.enabled || own.length) && speech.autoRevealSecs > 0) {
       state.revealTimer = setTimeout(() => { if (seq === state.seq && !state.revealed) reveal(); }, speech.autoRevealSecs * 1000);
     }
     if (voice.enabled && recognitionSupported) {
