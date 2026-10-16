@@ -14,11 +14,11 @@
   "hello.mp3"
  ],
  "guids": {
-  "dog": "DVr5.SDX7r",
-  "water": "sfL,c%WA@d",
-  "{{c1::Hyderabad}} is the capital of {{c2::Telangana::state}}": "K$%D0@4sT=",
-  "one": "dsi6k0{Au5",
-  "cat": "2IuX(zlAZ"
+  "dog": "n{(V8ZWjh*",
+  "water": "kFl5J}F8.@",
+  "{{c1::Hyderabad}} is the capital of {{c2::Telangana::state}}": "cT1tP`aG:7",
+  "one": "Izr;3Cq*e5",
+  "cat": "Q<pSI~<Y!;"
  },
  "preset": {
   "name": "Telugu preset",
@@ -34,13 +34,13 @@
   "leechThreshold": 6,
   "retention": 0.87
  },
- "suspended": 1792148644242,
- "flagged": 1792148644237,
+ "suspended": 1792150823404,
+ "flagged": 1792150823403,
  "reviewCards": [
-  1792148644224,
-  1792148644228,
-  1792148644229,
-  1792148644242
+  1792150823397,
+  1792150823399,
+  1792150823400,
+  1792150823404
  ],
  "crt": 1792103400
 }

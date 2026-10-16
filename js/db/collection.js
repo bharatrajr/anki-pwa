@@ -84,10 +84,25 @@ export class Collection {
     this.col = m.col;
     this.settings = deepMerge(DEFAULT_SETTINGS, m.settings || {});
     this.dayCounts = m.dayCounts || { day: -1, decks: {} };
-    for (const nt of await this.getAll('notetypes')) { this.notetypes.set(nt.id, nt); bumpIdFloor(nt.id); }
+    for (let nt of await this.getAll('notetypes')) {
+      if (typeof nt.id === 'string') nt = await this.fixStringNotetypeId(nt);
+      this.notetypes.set(nt.id, nt); bumpIdFloor(nt.id);
+    }
     for (const d of await this.getAll('decks')) { this.decks.set(d.id, d); }
     for (const p of await this.getAll('presets')) { this.presets.set(p.id, withDefaults(p)); }
     await this.rolloverIfNeeded();
+  }
+
+  /** v0.2.0 could store a note type under a string id (from genanki decks); give it a number id. */
+  async fixStringNotetypeId(nt) {
+    const fixed = { ...nt, id: Number(nt.id) || newId() };
+    const notes = await this.getAll('notes', IDBKeyRange.only(nt.id), 'ntid');
+    const t = this.tx(['notetypes', 'notes'], 'readwrite');
+    t.objectStore('notetypes').delete(nt.id);
+    t.objectStore('notetypes').put(fixed);
+    for (const n of notes) t.objectStore('notes').put({ ...n, ntid: fixed.id });
+    await txDone(t);
+    return fixed;
   }
 
   async initEmpty() {

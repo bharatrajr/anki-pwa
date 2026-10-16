@@ -231,6 +231,8 @@ export async function render(app) {
     }
     body.replaceChildren(section('Import finished',
       ...lines.map((l) => h('p', { style: { margin: '4px 0' } }, l)),
+      r.notesMissingType ? h('div', { class: 'banner', role: 'alert', style: { marginTop: '10px' } },
+        h('span', { class: 'spacer' }, `${r.notesMissingType} note${r.notesMissingType === 1 ? ' was' : 's were'} skipped because the file has no note type for ${r.notesMissingType === 1 ? 'it' : 'them'}. The file may be damaged; try exporting it again from Anki.`)) : null,
       r.errors?.length ? h('details', {}, h('summary', {}, `${r.errors.length} row(s) had problems`), h('ul', { class: 'small' }, r.errors.slice(0, 50).map((e) => h('li', {}, e)))) : null,
       h('div', { class: 'row', style: { marginTop: '12px' } },
         h('a', { class: 'btn primary', href: '#/' }, 'Go to decks'),

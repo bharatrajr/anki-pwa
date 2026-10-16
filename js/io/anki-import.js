@@ -56,7 +56,7 @@ export async function replaceWithPackage(col, pkg, { onProgress } = {}) {
   await col.replaceAll(data);
   for (const x of [...pkg.notetypes, ...decks, ...presets, ...notes, ...cards]) bumpIdFloor(x.id);
   const media = await importMedia(col, pkg, new Set(pkg.mediaNames), onProgress, { overwrite: true });
-  return { mode: 'replace', notesAdded: notes.length, cardsAdded: cards.length, revlogAdded: data.revlog.length, mediaAdded: media.added, notesUpdated: 0, notesSkipped: 0, cardsUpdated: 0 };
+  return { mode: 'replace', notesAdded: notes.length, cardsAdded: cards.length, revlogAdded: data.revlog.length, mediaAdded: media.added, notesUpdated: 0, notesSkipped: 0, cardsUpdated: 0, notesMissingType: pkg.notes.length - notes.length };
 }
 
 /**
@@ -68,7 +68,7 @@ export async function replaceWithPackage(col, pkg, { onProgress } = {}) {
 export async function mergePackage(col, pkg, opts = {}) {
   const { updateNotes = 'newer', withScheduling = true, updateScheduling = true, onProgress } = opts;
   const now = Date.now();
-  const result = { mode: 'merge', notesAdded: 0, notesUpdated: 0, notesSkipped: 0, cardsAdded: 0, cardsUpdated: 0, revlogAdded: 0, mediaAdded: 0, decksAdded: 0 };
+  const result = { mode: 'merge', notesAdded: 0, notesUpdated: 0, notesSkipped: 0, cardsAdded: 0, cardsUpdated: 0, revlogAdded: 0, mediaAdded: 0, decksAdded: 0, notesMissingType: 0 };
 
   // ---- note types ----
   const ntMap = new Map(); // pkg ntid → our ntid
@@ -148,7 +148,7 @@ export async function mergePackage(col, pkg, opts = {}) {
   const notesOut = [];
   for (const n of pkg.notes) {
     const ntid = ntMap.get(n.ntid);
-    if (!ntid) continue;
+    if (!ntid) { result.notesMissingType++; continue; }
     const nt = col.notetypes.get(ntid);
     const ours = existingNotes.get(n.guid);
     if (ours) {

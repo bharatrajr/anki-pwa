@@ -99,10 +99,10 @@ export function readCollection(db) {
     }
   }
 
-  const notetypes = modern ? modernNotetypes(db) : Object.values(JSON.parse(colRow.models || '{}')).map(legacyNotetype);
+  const notetypes = modern ? modernNotetypes(db) : Object.entries(JSON.parse(colRow.models || '{}')).map(([key, m]) => legacyNotetype(m, key));
   const { decks, filtered } = modern ? modernDecks(db) : legacyDecks(JSON.parse(colRow.decks || '{}'));
   const fsrsOn = conf.fsrs;
-  const presets = (modern ? modernPresets(db) : Object.values(JSON.parse(colRow.dconf || '{}')).map(legacyPreset))
+  const presets = (modern ? modernPresets(db) : Object.entries(JSON.parse(colRow.dconf || '{}')).map(([key, c]) => legacyPreset(c, key)))
     .map((p) => ({ ...p, scheduler: fsrsOn === false ? 'sm2' : 'fsrs' }));
 
   const ntById = new Map(notetypes.map((n) => [n.id, n]));
@@ -150,9 +150,13 @@ export function readCollection(db) {
 
 // ---------- legacy (schema 11, JSON) ----------
 
-function legacyNotetype(m) {
+// Ids in the legacy JSON can be strings (genanki writes note type ids that way, and Anki
+// accepts them), so they are converted to numbers to match notes.mid / cards.did.
+const toId = (v, key) => Number(v ?? key) || Number(key) || 0;
+
+function legacyNotetype(m, key) {
   return {
-    id: m.id, name: m.name, kind: m.type === 1 ? KIND_CLOZE : KIND_STANDARD, sortf: m.sortf || 0, mod: (m.mod || 0) * 1000,
+    id: toId(m.id, key), name: m.name, kind: m.type === 1 ? KIND_CLOZE : KIND_STANDARD, sortf: m.sortf || 0, mod: (m.mod || 0) * 1000,
     css: m.css || '',
     fields: (m.flds || []).map((f, i) => ({ name: f.name, ord: i, sticky: !!f.sticky, rtl: !!f.rtl, font: f.font || 'Arial', size: f.size || 20, description: f.description || '' })),
     templates: (m.tmpls || []).map((t, i) => ({ name: t.name, ord: i, qfmt: t.qfmt || '', afmt: t.afmt || '', bqfmt: t.bqfmt || '', bafmt: t.bafmt || '', did: t.did || null })),
@@ -162,18 +166,19 @@ function legacyNotetype(m) {
 
 function legacyDecks(obj) {
   const decks = [], filtered = [];
-  for (const d of Object.values(obj)) {
-    if (d.dyn) { filtered.push(d.id); continue; }
-    decks.push({ id: d.id, name: String(d.name).replace(/\x1f/g, '::'), presetId: d.conf || 1, desc: d.desc || '', collapsed: !!d.collapsed, mod: (d.mod || 0) * 1000, dyn: 0 });
+  for (const [key, d] of Object.entries(obj)) {
+    const id = toId(d.id, key);
+    if (d.dyn) { filtered.push(id); continue; }
+    decks.push({ id, name: String(d.name).replace(/\x1f/g, '::'), presetId: Number(d.conf) || 1, desc: d.desc || '', collapsed: !!d.collapsed, mod: (d.mod || 0) * 1000, dyn: 0 });
   }
   return { decks, filtered };
 }
 
-function legacyPreset(c) {
+function legacyPreset(c, key) {
   const n = c.new || {}, r = c.rev || {}, l = c.lapse || {};
   const params = [c.fsrsParams6, c.fsrsParams5, c.fsrsWeights].find((a) => Array.isArray(a) && a.length >= 17) || null;
   return sanePreset({
-    id: c.id, name: c.name,
+    id: toId(c.id, key), name: c.name,
     learnSteps: n.delays, relearnSteps: l.delays,
     gradIvl: n.ints?.[0], easyIvl: n.ints?.[1], startingEase: n.initialFactor ? n.initialFactor / 1000 : undefined,
     newPerDay: n.perDay, revPerDay: r.perDay, buryNew: n.bury, buryRev: r.bury, buryInterday: c.buryInterdayLearning,

@@ -67,6 +67,35 @@ test('merge an .apkg, then merge it again (no duplicates)', async () => {
   assert.ok((await col.getCard(next.card.id)).reps >= 1);
 });
 
+test('genanki deck (note type id stored as a string) is studyable after import', async () => {
+  for (const mode of ['merge', 'replace']) {
+    const col = await freshCol();
+    const pkg = await readAnkiPackage(fixture('genanki.apkg'), { filename: 'genanki.apkg' });
+    const r = mode === 'merge' ? await mergePackage(col, pkg) : await replaceWithPackage(col, pkg);
+    assert.equal(r.notesAdded, 5, mode);
+    assert.equal(r.notesMissingType, 0, mode);
+    const deck = col.deckByName('Country Capitals');
+    assert.equal((await deckCounts(col, deck.id)).n, 5, mode);
+    const next = await nextCard(col, deck.id);
+    assert.ok(next, mode);
+    assert.ok(col.notetypes.get((await col.getNote(next.card.nid)).ntid), `${mode}: note type found`);
+  }
+});
+
+test('a note type saved under a string id by v0.2.0 is repaired on open', async () => {
+  const col = await freshCol();
+  const basic = col.notetypeByName('Basic');
+  const bad = { ...basic, id: '1607392319', name: 'Simple Model' };
+  await col.put('notetypes', bad);
+  const { note } = await col.addNote({ ntid: basic.id, fields: ['x', 'y'] });
+  await col.put('notes', { ...note, ntid: '1607392319' });
+  col.notetypes.clear(); col.decks.clear(); col.presets.clear();
+  await col.load();
+  assert.ok(col.notetypes.get(1607392319));
+  assert.ok(![...col.notetypes.keys()].some((k) => typeof k === 'string'));
+  assert.equal((await col.getNote(note.id)).ntid, 1607392319);
+});
+
 test('merge without scheduling imports everything as new', async () => {
   const col = await freshCol();
   const pkg = await readAnkiPackage(fixture('legacy.apkg'), { filename: 'legacy.apkg' });

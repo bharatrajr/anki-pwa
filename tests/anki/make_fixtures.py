@@ -108,6 +108,19 @@ col.export_collection_package(os.path.join(OUT, 'modern.colpkg'), include_media=
 col = Collection(os.path.join(tmp, 'collection.anki2'))
 col.export_collection_package(os.path.join(OUT, 'legacy.colpkg'), include_media=True, legacy=True)
 
+# A deck made with genanki, which most downloadable decks use. It stores the note type
+# id as a string in the models JSON.
+try:
+    import genanki
+    gm = genanki.Model(1607392319, 'Simple Model', fields=[{'name': 'Question'}, {'name': 'Answer'}],
+                       templates=[{'name': 'Card 1', 'qfmt': '{{Question}}', 'afmt': '{{FrontSide}}<hr id="answer">{{Answer}}'}])
+    gd = genanki.Deck(2059400110, 'Country Capitals')
+    for i in range(5):
+        gd.add_note(genanki.Note(model=gm, fields=[f'Capital {i}', f'City {i}']))
+    genanki.Package(gd).write_to_file(os.path.join(OUT, 'genanki.apkg'))
+except ImportError:
+    print('genanki not installed; skipping genanki.apkg (pip install genanki)')
+
 with open(os.path.join(OUT, 'expected.json'), 'w') as f:
     json.dump(expected, f, indent=1)
 print(json.dumps(expected, indent=1))

@@ -2,7 +2,7 @@
 
 AnkiPWA is an offline flashcard app for your browser. It schedules reviews with FSRS, the same algorithm current Anki uses, and works the same way Anki does. You install it on Android or iPhone from a GitHub Pages site. It needs no account or server, and your cards never leave your device.
 
-> **Status: all five milestones are built (v0.2.0).** Study with FSRS or SM-2; import and export Anki decks and collections with progress and media; import spreadsheets, Quizlet and JSON; read cards aloud and answer by voice; search and bulk-edit cards; see statistics; and do custom study. See the [roadmap](#roadmap).
+> **Status: all five milestones are built (v0.2.1).** Study with FSRS or SM-2; import and export Anki decks and collections with progress and media; import spreadsheets, Quizlet and JSON; read cards aloud and answer by voice; search and bulk-edit cards; see statistics; and do custom study. See the [roadmap](#roadmap).
 >
 > AnkiPWA is an independent project and is not affiliated with Anki or AnkiWeb.
 
