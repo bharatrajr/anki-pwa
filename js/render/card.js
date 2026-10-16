@@ -43,6 +43,8 @@ export function renderCard({ card, note, notetype, deckName = '', typed = '' }) 
     searchText: isCloze ? clozeQuestionText(note, notetype, card, '').slice(0, 300) : searchText(qHtml),
     qSounds: soundRefs(q.html),
     aSounds: soundRefs(answerOnlyHtml(a.html)),
+    qLang: q.ttsLang,
+    aLang: a.ttsLang || q.ttsLang,
   };
 }
 

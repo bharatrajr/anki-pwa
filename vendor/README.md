@@ -1,6 +1,6 @@
 # Vendored libraries
 
-Kept in the repo so the app works offline with no CDN. Used from milestone 2 (Anki import/export).
+Kept in the repo so the app works offline with no CDN. Used for Anki import/export and loaded only when needed.
 
 | File | Library | Version | License |
 |---|---|---|---|

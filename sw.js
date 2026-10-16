@@ -2,7 +2,7 @@
 // quickly), cache fallback when offline. Large vendor files are cache-first.
 // Bump VERSION on every release; the old cache is deleted on activate.
 
-const VERSION = 'v0.1.0';
+const VERSION = 'v0.2.0';
 const CACHE = `ankipwa-${VERSION}`;
 const SHELL = [
   './',
@@ -28,6 +28,16 @@ const SHELL = [
   './js/sched/scheduler.js',
   './js/sched/queue.js',
   './js/io/backup.js',
+  './js/io/vendor.js',
+  './js/io/protobuf.js',
+  './js/io/anki-read.js',
+  './js/io/anki-import.js',
+  './js/io/anki-export.js',
+  './js/io/text-import.js',
+  './js/search/search.js',
+  './js/sched/filtered.js',
+  './js/stats/stats.js',
+  './js/speech/speech.js',
   './js/util/hash.js',
   './js/util/time.js',
   './js/util/platform.js',
@@ -40,6 +50,10 @@ const SHELL = [
   './js/ui/settings.js',
   './js/ui/backup.js',
   './js/ui/help.js',
+  './js/ui/import.js',
+  './js/ui/export.js',
+  './js/ui/browse.js',
+  './js/ui/stats.js',
 ];
 const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszip.min.js', './vendor/fzstd.mjs'];
 
@@ -92,8 +106,26 @@ async function cacheFirst(request) {
   return response;
 }
 
+// Android share sheet (Web Share Target): keep the shared file, then open the import screen.
+async function receiveShare(request) {
+  try {
+    const form = await request.formData();
+    let file = form.getAll('file').find((f) => f && typeof f !== 'string');
+    if (!file) {
+      const text = [form.get('title'), form.get('text'), form.get('url')].filter(Boolean).join('\n');
+      if (text) file = new File([text], 'shared.txt', { type: 'text/plain' });
+    }
+    if (file) {
+      const cache = await caches.open('ankipwa-share');
+      await cache.put('shared-file', new Response(file, { headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name || 'shared') } }));
+    }
+  } catch (e) { console.warn('share failed', e); }
+  return Response.redirect('./#/import?shared=1', 303);
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share-target')) { event.respondWith(receiveShare(req)); return; }
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;

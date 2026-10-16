@@ -1,0 +1,46 @@
+{
+ "notes": 5,
+ "cards": 7,
+ "revlog": 4,
+ "answered": 4,
+ "decks": [
+  "Default",
+  "Telugu",
+  "Telugu::Grammar",
+  "Telugu::Words"
+ ],
+ "media": [
+  "dot.png",
+  "hello.mp3"
+ ],
+ "guids": {
+  "dog": "DVr5.SDX7r",
+  "water": "sfL,c%WA@d",
+  "{{c1::Hyderabad}} is the capital of {{c2::Telangana::state}}": "K$%D0@4sT=",
+  "one": "dsi6k0{Au5",
+  "cat": "2IuX(zlAZ"
+ },
+ "preset": {
+  "name": "Telugu preset",
+  "newPerDay": 15,
+  "revPerDay": 150,
+  "learnSteps": [
+   2,
+   15
+  ],
+  "relearnSteps": [
+   5
+  ],
+  "leechThreshold": 6,
+  "retention": 0.87
+ },
+ "suspended": 1792148644242,
+ "flagged": 1792148644237,
+ "reviewCards": [
+  1792148644224,
+  1792148644228,
+  1792148644229,
+  1792148644242
+ ],
+ "crt": 1792103400
+}

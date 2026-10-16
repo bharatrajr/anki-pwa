@@ -24,7 +24,8 @@ const DEFAULT_SETTINGS = {
   showRemaining: true,
   backupReminderDays: 7,
   tts: { enabled: false, voiceURI: '', rate: 1, autoRevealSecs: 0, readAnswer: true },
-  voice: { enabled: false },
+  voice: { enabled: false, lang: 'en-US' },
+  keepAwake: true, // while reading aloud / listening
 };
 
 export class Collection {
@@ -193,7 +194,10 @@ export class Collection {
     const ids = this.deckSubtreeIds(id);
     const cardIds = [];
     const nids = new Set();
+    // Cards in filtered decks belong to their home decks: send them back, don't delete them.
+    for (const did of ids) if (this.decks.get(did)?.dyn) await this.returnCardsHome(did);
     for (const did of ids) {
+      if (this.decks.get(did)?.dyn) continue;
       const cards = await this.getAll('cards', IDBKeyRange.bound([did, -Infinity, -Infinity], [did, Infinity, Infinity]), 'did_queue_due');
       for (const c of cards) { cardIds.push(c.id); nids.add(c.nid); }
     }
@@ -224,6 +228,16 @@ export class Collection {
       if (p) out.push(p.id);
     }
     return out;
+  }
+
+  /** Move every card of a filtered deck back to its home deck and original due. */
+  async returnCardsHome(did) {
+    const cards = await this.getAll('cards', IDBKeyRange.bound([did, -Infinity, -Infinity], [did, Infinity, Infinity]), 'did_queue_due');
+    const now = Date.now();
+    for (const c of cards) Object.assign(c, homeCard(c), { mod: now });
+    await this.putMany('cards', cards);
+    this.emit('cards');
+    return cards.length;
   }
 
   presetFor(did) {
@@ -275,13 +289,12 @@ export class Collection {
     await this.put('notetypes', nt);
   }
 
-  /** Create a note and its cards. Returns {note, cards}. */
-  async addNote({ ntid, fields, tags = [], did = DEFAULT_DECK_ID }) {
+  /** Build (but do not store) a note and its cards; uses the next new-card position. */
+  buildNote({ ntid, fields, tags = [], did = DEFAULT_DECK_ID, guid }, now = Date.now()) {
     const nt = this.notetypes.get(ntid);
     if (!nt) throw new Error('Unknown note type');
-    const now = Date.now();
     const note = {
-      id: newId(now), guid: guid64(), ntid, mod: now,
+      id: newId(now), guid: guid || guid64(), ntid, mod: now,
       fields: nt.fields.map((_, i) => fields[i] ?? ''),
       tags: normaliseTags(tags), flags: 0, data: '',
     };
@@ -289,8 +302,16 @@ export class Collection {
     note.sfld = sortFieldText(nt, note);
     const ords = cardOrdsForNote(nt, note);
     if (!ords.length) throw new Error(nt.kind === KIND_CLOZE ? 'Add at least one cloze, e.g. {{c1::answer}}.' : 'The front of this card would be empty.');
-    const cards = ords.map((ord) => newCard({ id: newId(now), nid: note.id, did: templateDeck(nt, ord) || did, ord, due: this.col.nextPos, now }));
+    const deckOk = (id) => id && this.decks.has(id) && !this.decks.get(id).dyn;
+    const cards = ords.map((ord) => newCard({ id: newId(now), nid: note.id, did: deckOk(templateDeck(nt, ord)) ? templateDeck(nt, ord) : did, ord, due: this.col.nextPos, now }));
     this.col.nextPos += 1;
+    return { note, cards };
+  }
+
+  /** Create a note and its cards. Returns {note, cards}. */
+  async addNote(item) {
+    const now = Date.now();
+    const { note, cards } = this.buildNote(item, now);
     const t = this.tx(['notes', 'cards', 'meta'], 'readwrite');
     t.objectStore('notes').add(note);
     for (const c of cards) t.objectStore('cards').add(c);
@@ -300,6 +321,23 @@ export class Collection {
     this.emit('notes');
     return { note, cards };
   }
+
+  /** Write already-built notes/cards (and optional revlog) in chunked transactions. */
+  async writeNotesAndCards({ notes = [], cards = [], revlog = [] }, chunk = 2000) {
+    const parts = [['notes', notes], ['cards', cards], ['revlog', revlog]];
+    for (const [store, list] of parts) {
+      for (let i = 0; i < list.length; i += chunk) {
+        const t = this.tx(store, 'readwrite');
+        const os = t.objectStore(store);
+        for (const v of list.slice(i, i + chunk)) os.put(v);
+        await txDone(t);
+      }
+    }
+    await this.saveCol();
+    this.emit('notes');
+  }
+
+  async getNoteByGuid(guid) { return reqP(this.tx('notes').objectStore('notes').index('guid').get(guid)); }
 
   /** Save edited fields/tags; adds cards for templates/clozes that became non-empty. */
   async updateNote(note, { did } = {}) {
@@ -417,6 +455,7 @@ export class Collection {
   }
   /** Remaining new/review allowance for a deck today (its own preset, plus extras). */
   remainingToday(did, kind) {
+    if (this.decks.get(did)?.dyn) return Infinity; // filtered decks ignore daily limits, like Anki
     const p = this.presetFor(did);
     const limit = kind === 'n' ? p.newPerDay : p.revPerDay;
     const extra = this.dayCounts.extra?.[did]?.[kind] || 0;
@@ -478,6 +517,17 @@ export function restoreQueue(card) {
     case 1: case 3: return card.due > 1_000_000_000 ? 1 : 3;
     default: return 0;
   }
+}
+
+/**
+ * A card as it is in its home deck: for a card in a filtered deck, the original deck and
+ * due (learning cards keep their current due time). Returns a new object.
+ */
+export function homeCard(card) {
+  if (!card.odid) return { ...card };
+  const c = { ...card, did: card.odid, odid: 0, odue: 0 };
+  if (card.queue !== 1 && card.odue) c.due = card.odue;
+  return c;
 }
 
 function templateDeck(nt, ord) {

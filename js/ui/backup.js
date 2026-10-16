@@ -1,4 +1,4 @@
-// Backup & restore (full lossless JSON). Anki import/export screens arrive in later milestones.
+// Files: Anki import/export, and backup & restore (full lossless JSON).
 
 import { h, toast, confirmDialog, downloadBlob, pickFile } from './components.js';
 import { backupBlob, backupFilename, parseBackup } from '../io/backup.js';
@@ -6,7 +6,8 @@ import { fmtDate } from '../util/time.js';
 
 export async function render(app) {
   const col = app.col;
-  app.setTitle('Backup');
+  app.setTitle('Files');
+  app.setActions(h('a', { class: 'icon-btn nav-narrow', href: '#/settings', 'aria-label': 'Settings', title: 'Settings' }, '⚙'));
   const notes = await col.noteCount();
   const cards = await col.cardCount();
   const last = col.col.lastBackup;
@@ -61,6 +62,11 @@ export async function render(app) {
   const section = (title, ...kids) => h('section', { class: 'section' }, h('h2', {}, title), h('div', { class: 'card-surface', style: { padding: '14px' } }, ...kids));
 
   app.main.append(
+    section('Anki files',
+      h('p', { style: { marginTop: 0 } }, 'Move decks and progress between AnkiPWA and Anki desktop, AnkiDroid or AnkiMobile, or bring in spreadsheets and Quizlet sets.'),
+      h('div', { class: 'row' },
+        h('a', { class: 'btn primary', href: '#/import' }, 'Import…'),
+        h('a', { class: 'btn', href: '#/export' }, 'Export…'))),
     section('Full backup',
       h('p', { style: { marginTop: 0 } }, 'Everything in one file: decks, notes, cards, review history, media and settings. Keep a copy somewhere safe, such as Google Drive, at least once a week.'),
       h('p', { class: 'small muted' }, `${notes} notes · ${cards} cards · last backup: ${last ? fmtDate(last) : 'never'}`),
@@ -70,8 +76,6 @@ export async function render(app) {
       status),
     section('Restore',
       h('p', { style: { marginTop: 0 } }, 'Load a backup file made by this app. This replaces everything on this device.'),
-      h('button', { class: 'btn', type: 'button', onclick: restore }, 'Restore from file…')),
-    section('Anki files',
-      h('p', { style: { margin: 0 }, class: 'muted' }, 'Importing .apkg / .colpkg / text files from Anki, AnkiDroid and AnkiMobile, and exporting back with your progress, come in the next updates.'))
+      h('button', { class: 'btn', type: 'button', onclick: restore }, 'Restore from file…'))
   );
 }

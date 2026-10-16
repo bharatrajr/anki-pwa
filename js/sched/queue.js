@@ -2,9 +2,10 @@
 // Ordering follows Anki's v3 defaults: intraday learning first (when due), then
 // reviews and interday learning mixed with new cards, then learn-ahead.
 
-import { nextStates, isLeech, RATING } from './scheduler.js';
+import { nextStates, isLeech, RATING, REVLOG } from './scheduler.js';
 import { iterate, txDone } from '../db/idb.js';
 import { newId } from '../util/hash.js';
+import { homeCard } from '../db/collection.js';
 
 const Q = { SUSP: -1, SIB_BURIED: -2, USER_BURIED: -3, NEW: 0, LRN: 1, REV: 2, DAY_LRN: 3 };
 export { Q };
@@ -133,7 +134,13 @@ export function schedContext(col, card, timing = col.timing()) {
 
 /** The four possible outcomes, for button labels. */
 export function previewOutcomes(col, card) {
-  return nextStates(card, schedContext(col, card));
+  return nextStates(homeCard(card), schedContext(col, card));
+}
+
+/** The filtered deck a card is in when that deck doesn't reschedule (preview / cram), else null. */
+export function previewDeckOf(col, card) {
+  const d = card.odid ? col.decks.get(card.did) : null;
+  return d?.dyn && d.resched === false ? d : null;
 }
 
 /**
@@ -141,11 +148,19 @@ export function previewOutcomes(col, card) {
  * Writes the card, a revlog row, daily counts, sibling burying and leech handling.
  */
 export async function answerCard(col, card, rating, { timeMs = 0 } = {}) {
+  if (previewDeckOf(col, card)) return previewAnswer(col, card, rating);
   const ctx = schedContext(col, card);
-  const outcome = nextStates(card, ctx)[rating - 1];
+  // A card in a filtered deck is scheduled as it is in its home deck.
+  const home = homeCard(card);
+  const outcome = nextStates(home, ctx)[rating - 1];
   const p = ctx.preset;
   const before = { ...card };
   const updated = { ...outcome.card, mod: Date.now() };
+  if (card.odid) {
+    // Intraday learning stays in the filtered deck; anything else goes home.
+    if (updated.queue === Q.LRN) Object.assign(updated, { did: card.did, odid: card.odid, odue: card.odue });
+    if (home.queue === Q.REV && home.due > ctx.today) outcome.revlog.type = REVLOG.FILTERED; // reviewed early
+  }
   const wasNew = card.type === 0;
   const kind = wasNew ? 'n' : card.type === 2 || card.queue === 3 ? 'r' : null;
 
@@ -194,6 +209,20 @@ export async function answerCard(col, card, rating, { timeMs = 0 } = {}) {
     kind: 'answer', cardBefore: before, cardAfter: updated, revlogId: rev.id, siblingsBefore, noteBefore,
     dayBefore, leech: outcome.leech, rating,
   };
+}
+
+/** Preview mode: Again shows the card again later in the session, other answers send it home unchanged. */
+async function previewAnswer(col, card, rating) {
+  const before = { ...card };
+  const now = Date.now();
+  let updated;
+  if (rating === RATING.AGAIN) {
+    updated = { ...card, mod: now };
+    updated.due = card.queue === Q.LRN ? Math.floor(now / 1000) + 60 : -1;
+  } else updated = { ...homeCard(card), mod: now };
+  await col.putMany('cards', [updated]);
+  col.emit('review');
+  return { kind: 'answer', cardBefore: before, cardAfter: updated, siblingsBefore: [], rating, preview: true };
 }
 
 /** Undo an entry produced by answerCard or a card action. */

@@ -43,13 +43,13 @@ export function parseTemplate(src) {
  * Render a template.
  * ctx: { fields: {name: html}, side: 'q'|'a', cardOrd (0-based), frontSide (html for {{FrontSide}}),
  *        tags: [], deckName, cardName, notetypeName, flag, typed (string typed by the user) }
- * Returns { html, typeAnswer: {expected, combining} | null, ttsSegments: [] }
+ * Returns { html, typeAnswer: {expected, combining} | null, ttsLang: 'te-IN' | null }
  */
 export function renderTemplate(src, ctx) {
   const tree = parseTemplate(src);
-  const state = { typeAnswer: null };
+  const state = { typeAnswer: null, ttsLang: null };
   const html = renderNodes(tree.children, ctx, state);
-  return { html, typeAnswer: state.typeAnswer };
+  return { html, typeAnswer: state.typeAnswer, ttsLang: state.ttsLang };
 }
 
 function lookup(name, ctx) {
@@ -101,11 +101,11 @@ function renderField(node, ctx, state) {
     return `<div id="typeans-result">${typeDiff(ctx.typed || '', expected)}</div>`;
   }
   // Filters are applied right-to-left (innermost first), e.g. {{text:cloze:Text}}.
-  for (let i = filters.length - 1; i >= 0; i--) value = applyFilter(filters[i], value, ctx);
+  for (let i = filters.length - 1; i >= 0; i--) value = applyFilter(filters[i], value, ctx, state);
   return value;
 }
 
-function applyFilter(filter, value, ctx) {
+function applyFilter(filter, value, ctx, state = {}) {
   const name = filter.split(/\s+/)[0];
   switch (name) {
     case 'text':
@@ -119,8 +119,12 @@ function applyFilter(filter, value, ctx) {
       const id = `hint${Math.random().toString(36).slice(2, 8)}`;
       return `<a class="hint" href="#" data-hint="${id}">Show hint</a><div id="${id}" class="hint" style="display:none">${value}</div>`;
     }
-    case 'tts':
-      return value; // TTS is handled by the app's read-aloud feature
+    case 'tts': {
+      // {{tts te_IN:Field}}: the app's read-aloud uses this language for the side.
+      const lang = filter.split(/\s+/)[1];
+      if (lang && !state.ttsLang) state.ttsLang = lang.replace('_', '-');
+      return value;
+    }
     case 'kana':
       return value.replace(/ ?([^ >]+?)\[(.+?)\]/g, '$2');
     case 'kanji':

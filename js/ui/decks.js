@@ -3,6 +3,7 @@
 import { h, menuSheet, promptDialog, confirmDialog, toast } from './components.js';
 import { allDeckCounts } from '../sched/queue.js';
 import { DEFAULT_DECK_ID } from '../db/collection.js';
+import { rebuildFiltered, emptyFiltered } from '../sched/filtered.js';
 import { isIOS, isStandalone } from '../util/platform.js';
 
 export async function render(app) {
@@ -11,7 +12,8 @@ export async function render(app) {
   app.setActions(
     h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Create deck', title: 'Create deck', onclick: () => createDeck(app) },
       h('span', { 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/></svg>' })),
-    h('a', { class: 'icon-btn', href: '#/help', 'aria-label': 'Help', title: 'Help' }, '?')
+    h('a', { class: 'icon-btn', href: '#/help', 'aria-label': 'Help', title: 'Help' }, '?'),
+    h('a', { class: 'icon-btn nav-narrow', href: '#/settings', 'aria-label': 'Settings', title: 'Settings' }, '⚙')
   );
 
   await col.rolloverIfNeeded();
@@ -30,9 +32,10 @@ export async function render(app) {
     app.main.append(
       h('div', { class: 'empty card-surface' },
         h('h2', {}, 'No cards yet'),
-        h('p', {}, 'Add your first card, or restore a backup. Importing Anki .apkg files arrives in the next update.'),
+        h('p', {}, 'Add your first card, import a deck from Anki (.apkg, .colpkg), a spreadsheet or Quizlet, or restore a backup.'),
         h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '12px' } },
           h('a', { class: 'btn primary', href: '#/add' }, 'Add a card'),
+          h('a', { class: 'btn', href: '#/import' }, 'Import a deck'),
           h('a', { class: 'btn', href: '#/backup' }, 'Restore backup')))
     );
     return;
@@ -52,7 +55,7 @@ export async function render(app) {
         class: `twisty${kids.length ? '' : ' none'}`, type: 'button', 'aria-label': deck.collapsed ? `Expand ${short}` : `Collapse ${short}`,
         onclick: async () => { deck.collapsed = !deck.collapsed; await col.saveDeck(deck); render2(); },
       }, kids.length ? (deck.collapsed ? '▶' : '▼') : ''),
-      h('a', { class: 'deck-name', href: `#/deck/${deck.id}` }, h('span', {}, short)),
+      h('a', { class: `deck-name${deck.dyn ? ' filtered' : ''}`, href: `#/deck/${deck.id}` }, h('span', {}, short)),
       h('span', { class: 'counts' }, num(c.n, 'n', 'new'), num(c.l, 'l', 'learning'), num(c.r, 'r', 'to review')),
       h('button', { class: 'icon-btn', type: 'button', 'aria-label': `Options for ${short}`, onclick: () => deckMenu(app, deck) }, '⋮')
     );
@@ -110,10 +113,22 @@ async function createDeck(app, parent = '') {
 
 async function deckMenu(app, deck) {
   const col = app.col;
+  if (deck.dyn) {
+    await menuSheet(deck.name, [
+      { label: 'Study', icon: '▶', onClick: () => app.go(`/review/${deck.id}`) },
+      { label: 'Rebuild', icon: '↻', onClick: async () => { const n = await rebuildFiltered(col, deck.id); toast(`Rebuilt: ${n} cards`); app.go('/'); } },
+      { label: 'Empty', icon: '⤴', onClick: async () => { await emptyFiltered(col, deck.id); toast('Cards returned to their decks'); app.go('/'); } },
+      { label: 'Delete', icon: '🗑', onClick: async () => { await col.deleteDeck(deck.id); toast('Filtered deck deleted; its cards went back to their decks'); app.go('/'); } },
+    ]);
+    return;
+  }
   await menuSheet(deck.name, [
     { label: 'Study', icon: '▶', onClick: () => app.go(`/review/${deck.id}`) },
     { label: 'Add card here', icon: '+', onClick: () => app.go(`/add?did=${deck.id}`) },
     { label: 'Options', icon: '⚙', onClick: () => app.go(`/options/${deck.id}`) },
+    { label: 'Browse cards', icon: '🔍', onClick: () => app.go(`/browse?q=${encodeURIComponent(`deck:"${deck.name}"`)}`) },
+    { label: 'Statistics', icon: '📊', onClick: () => app.go(`/stats?did=${deck.id}`) },
+    { label: 'Export', icon: '⇪', onClick: () => app.go(`/export?did=${deck.id}`) },
     { label: 'Add subdeck', icon: '📁', onClick: () => createDeck(app, deck.name) },
     { label: 'Rename', icon: '✎', onClick: async () => {
       const name = await promptDialog('Rename deck', { label: 'Deck name', value: deck.name, ok: 'Rename' });

@@ -4,8 +4,9 @@
 import { h, toast, menuSheet, sheet, promptDialog, confirmDialog, FLAG_NAMES } from './components.js';
 import {
   nextCard, deckCounts, previewOutcomes, answerCard, undo, UndoStack, suspendCards, buryCards, flagCards,
-  forgetCards, setDueDate, schedContext, nextLearningDue, Q,
+  forgetCards, setDueDate, schedContext, nextLearningDue, previewDeckOf, Q,
 } from '../sched/queue.js';
+import { speak, stopSpeaking, listenFor, keepAwake, ttsSupported, recognitionSupported } from '../speech/speech.js';
 import { currentRetrievability, REVLOG } from '../sched/scheduler.js';
 import { renderCard, showInFrame, fitFrame } from '../render/card.js';
 import { fmtInterval, fmtDate, dayToDate } from '../util/time.js';
@@ -34,7 +35,9 @@ export async function render(app, [idStr]) {
   };
   const audio = new Audio();
 
-  const state = { card: null, note: null, nt: null, rendered: null, revealed: false, shownAt: 0, outcomes: null, kind: '', busy: false, waitTimer: null, typed: '' };
+  const state = { card: null, note: null, nt: null, rendered: null, revealed: false, shownAt: 0, outcomes: null, kind: '', busy: false, waitTimer: null, typed: '', seq: 0, listener: null, revealTimer: null };
+  const speech = col.settings.tts;
+  const voice = col.settings.voice;
 
   const undoBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Undo', title: 'Undo (u)', onclick: () => doUndo() }, '↶');
   const menuBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Card actions', title: 'More', onclick: () => cardMenu() }, '⋮');
@@ -46,7 +49,21 @@ export async function render(app, [idStr]) {
     class: 'chip', type: 'button', title: 'Copy the question and search Google', 'aria-label': 'Search the question on Google',
     onclick: (e) => { e.stopPropagation(); searchQuestion(); },
   }, h('span', { 'aria-hidden': 'true', html: SEARCH_ICON }), 'Search');
-  const topRow = h('div', { class: 'review-top' }, searchChip, flagChip, h('span', { class: 'spacer' }), h('span', { class: 'small muted', id: 'card-state' }));
+  const readChip = ttsSupported ? h('button', {
+    class: 'chip', type: 'button', 'aria-pressed': String(!!speech.enabled), title: 'Read cards aloud',
+    onclick: async (e) => { e.stopPropagation(); speech.enabled = !speech.enabled; await col.saveSettings(); syncChips(); if (speech.enabled) runSpeech(); else stopSpeaking(); },
+  }, h('span', { 'aria-hidden': 'true' }, '🔊'), h('span', { class: 'chip-label' }, 'Read')) : null;
+  const micChip = recognitionSupported ? h('button', {
+    class: 'chip', type: 'button', 'aria-pressed': String(!!voice.enabled), title: 'Answer by voice: say “show”, then again / hard / good / easy',
+    onclick: async (e) => { e.stopPropagation(); voice.enabled = !voice.enabled; await col.saveSettings(); syncChips(); if (voice.enabled) runSpeech(); else stopListening(); },
+  }, h('span', { 'aria-hidden': 'true' }, '🎤'), h('span', { class: 'chip-label' }, 'Voice')) : null;
+  const syncChips = () => {
+    readChip?.setAttribute('aria-pressed', String(!!speech.enabled));
+    micChip?.setAttribute('aria-pressed', String(!!voice.enabled));
+    keepAwake(col.settings.keepAwake && (speech.enabled || voice.enabled));
+  };
+  syncChips();
+  const topRow = h('div', { class: 'review-top' }, searchChip, readChip, micChip, flagChip, h('span', { class: 'spacer' }), h('span', { class: 'small muted', id: 'card-state' }));
   const frame = h('iframe', { class: 'card-frame', title: 'Card', sandbox: 'allow-same-origin', 'aria-live': 'polite' });
   const frameWrap = h('div', { class: 'card-frame-wrap' }, frame);
   const bar = h('div', { class: 'answer-bar' });
@@ -94,7 +111,7 @@ export async function render(app, [idStr]) {
     document.getElementById('card-state').textContent = ['New', 'Learning', 'Review', 'Relearning'][state.card.type] || '';
     renderBar();
     if (!state.revealed) state.shownAt = performance.now();
-    playSounds(state.revealed ? state.rendered.aSounds : state.rendered.qSounds);
+    runSpeech();
     const input = doc.getElementById('typeans');
     if (input && !state.revealed && matchMedia('(pointer: fine)').matches) input.focus();
   }
@@ -123,6 +140,13 @@ export async function render(app, [idStr]) {
   function renderBar() {
     if (!state.revealed) {
       barInner.replaceChildren(h('button', { class: 'btn primary show-btn', type: 'button', onclick: () => reveal() }, 'Show answer'));
+      return;
+    }
+    if (previewDeckOf(col, state.card)) {
+      // Preview / cram without rescheduling: only "again" or "done".
+      barInner.replaceChildren(h('div', { class: 'grades two', role: 'group', 'aria-label': 'Preview' },
+        h('button', { class: 'grade again', type: 'button', 'aria-label': 'Show again later (key 1)', onclick: () => grade(1) }, h('small', {}, 'later'), 'Again'),
+        h('button', { class: 'grade good', type: 'button', 'aria-label': 'Done, scheduling unchanged (key 3)', onclick: () => grade(3) }, h('small', {}, 'no change'), 'Done')));
       return;
     }
     const labels = ['Again', 'Hard', 'Good', 'Easy'];
@@ -190,6 +214,9 @@ export async function render(app, [idStr]) {
 
   async function finished() {
     state.card = null;
+    state.seq++;
+    stopListening();
+    clearTimeout(state.revealTimer);
     const nextLrn = await nextLearningDue(col, did);
     barInner.replaceChildren(h('a', { class: 'btn block', href: `#/deck/${did}` }, 'Back to deck'));
     content.replaceChildren(h('div', { class: 'empty card-surface' },
@@ -205,19 +232,67 @@ export async function render(app, [idStr]) {
 
   // ---------- audio ----------
   let soundQueue = [];
-  async function playSounds(names) {
+  let soundsDone = null;
+  /** Play [sound:] files in order; resolves when all have played (or failed). */
+  function playSounds(names) {
     soundQueue = [...names];
     audio.pause();
-    playNextSound();
+    soundsDone?.();
+    return new Promise((resolve) => { soundsDone = resolve; playNextSound(); });
   }
   async function playNextSound() {
     const name = soundQueue.shift();
-    if (!name) return;
+    if (!name) { soundsDone?.(); soundsDone = null; return; }
     const url = await getMediaUrl(name);
     if (!url) { toast(`Missing audio: ${name}`); return playNextSound(); }
     audio.src = url;
     audio.onended = () => playNextSound();
-    audio.play().catch(() => {}); // autoplay may be blocked until the first tap
+    audio.onerror = () => playNextSound();
+    audio.play().catch(() => playNextSound()); // autoplay may be blocked until the first tap
+  }
+
+  // ---------- read aloud, hands-free reveal, voice grading ----------
+  function stopListening() {
+    state.listener?.stop();
+    state.listener = null;
+    micChip?.classList.remove('live');
+  }
+  /** Sounds, then read aloud, then auto-reveal / listen for a command. Restarted on every side change. */
+  async function runSpeech() {
+    const seq = ++state.seq;
+    clearTimeout(state.revealTimer);
+    stopListening();
+    stopSpeaking();
+    if (!state.card || !state.rendered) return;
+    const answerSide = state.revealed;
+    const r = state.rendered;
+    await playSounds(answerSide ? r.aSounds : r.qSounds);
+    if (seq !== state.seq) return;
+    if (speech.enabled && (!answerSide || speech.readAnswer)) {
+      await speak(answerSide ? r.aText : r.qText, { voiceURI: speech.voiceURI, rate: speech.rate, lang: answerSide ? r.aLang : r.qLang });
+      if (seq !== state.seq) return;
+    }
+    if (!answerSide && speech.enabled && speech.autoRevealSecs > 0) {
+      state.revealTimer = setTimeout(() => { if (seq === state.seq && !state.revealed) reveal(); }, speech.autoRevealSecs * 1000);
+    }
+    if (voice.enabled && recognitionSupported) {
+      const allowed = answerSide ? ['again', 'hard', 'good', 'easy', 'undo', 'repeat'] : ['show', 'undo', 'repeat'];
+      micChip?.classList.add('live');
+      state.listener = listenFor(allowed, {
+        lang: voice.lang || 'en-US',
+        onState: (st, msg) => {
+          if (st === 'listening') micChip?.classList.add('live'); else micChip?.classList.remove('live');
+          if (st === 'error') { toast(msg); voice.enabled = false; col.saveSettings(); syncChips(); }
+        },
+        onCommand: (cmd) => {
+          if (seq !== state.seq) return;
+          if (cmd === 'show') reveal();
+          else if (cmd === 'undo') doUndo();
+          else if (cmd === 'repeat') runSpeech();
+          else grade({ again: 1, hard: 2, good: 3, easy: 4 }[cmd]);
+        },
+      });
+    }
   }
 
   // ---------- search ----------
@@ -292,7 +367,7 @@ export async function render(app, [idStr]) {
     else if (/^[1-4]$/.test(k)) { if (state.revealed) { e.preventDefault(); grade(Number(k)); } }
     else if (k === 'u' || k === 'U') { e.preventDefault(); doUndo(); }
     else if (k === 'e' || k === 'E') { e.preventDefault(); editNote(); }
-    else if (k === 'r' || k === 'R') { e.preventDefault(); playSounds(state.revealed ? state.rendered.aSounds : state.rendered.qSounds); }
+    else if (k === 'r' || k === 'R') { e.preventDefault(); runSpeech(); }
     else if (k === '-') { e.preventDefault(); buryCurrent(); }
     else if (k === '@') { e.preventDefault(); suspendCurrent(); }
     else if (k === 'i' || k === 'I') { e.preventDefault(); if (state.card) cardInfo(app, state.card, state.note, state.nt); }
@@ -307,6 +382,11 @@ export async function render(app, [idStr]) {
     window.removeEventListener('resize', onResize);
     darkMq.removeEventListener('change', onScheme);
     clearTimeout(state.waitTimer);
+    clearTimeout(state.revealTimer);
+    state.seq++;
+    stopListening();
+    stopSpeaking();
+    keepAwake(false);
     audio.pause();
     for (const url of mediaUrls.values()) if (url) URL.revokeObjectURL(url);
     document.body.classList.remove('reviewing');

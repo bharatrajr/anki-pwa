@@ -5,6 +5,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Collection } from '../js/db/collection.js';
 import { nextCard, answerCard, undo, deckCounts, buryCards, suspendCards, forgetCards, setDueDate, Q } from '../js/sched/queue.js';
 import { buildBackup, parseBackup } from '../js/io/backup.js';
@@ -146,7 +147,7 @@ test('50,000 cards: due counts stay fast via the [did,queue,due] index', async (
 
 test('service worker precaches every app module', () => {
   const sw = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
-  const root = new URL('..', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const walk = (dir) => readdirSync(dir).flatMap((f) => { const p = join(dir, f); return statSync(p).isDirectory() ? walk(p) : [p]; });
   for (const file of walk(join(root, 'js'))) {
     const rel = './' + file.slice(root.length).replace(/\\/g, '/');

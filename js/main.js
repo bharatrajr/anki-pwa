@@ -11,8 +11,12 @@ import * as optionsView from './ui/options.js';
 import * as settingsView from './ui/settings.js';
 import * as backupView from './ui/backup.js';
 import * as helpView from './ui/help.js';
+import * as importView from './ui/import.js';
+import * as exportView from './ui/export.js';
+import * as browseView from './ui/browse.js';
+import * as statsView from './ui/stats.js';
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.2.0';
 
 const routes = [
   [/^\/?$/, decksView, 'decks'],
@@ -21,9 +25,13 @@ const routes = [
   [/^\/add$/, editorView, 'add'],
   [/^\/edit\/(\d+)$/, editorView, 'decks'],
   [/^\/options\/(\d+)$/, optionsView, 'decks'],
-  [/^\/settings$/, settingsView, 'settings'],
+  [/^\/settings$/, settingsView, 'decks'],
   [/^\/backup$/, backupView, 'backup'],
-  [/^\/help$/, helpView, 'settings'],
+  [/^\/import$/, importView, 'backup'],
+  [/^\/export$/, exportView, 'backup'],
+  [/^\/browse$/, browseView, 'browse'],
+  [/^\/stats$/, statsView, 'stats'],
+  [/^\/help$/, helpView, 'decks'],
 ];
 
 const app = {
@@ -58,7 +66,7 @@ const app = {
 async function route() {
   const path = (location.hash.slice(1) || '/').split('?')[0];
   if (app.cleanup) { try { await app.cleanup(); } catch (e) { console.error(e); } app.cleanup = null; }
-  document.body.classList.remove('reviewing');
+  document.body.classList.remove('reviewing', 'selecting');
   app.setBack(null);
   app.setActions();
   for (const [re, view, nav] of routes) {
@@ -97,6 +105,15 @@ async function boot() {
   window.addEventListener('hashchange', route);
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); app.installPrompt = e; document.dispatchEvent(new Event('installable')); });
   window.addEventListener('appinstalled', () => { app.installPrompt = null; toast('Installed. You can open AnkiPWA from your home screen.'); });
+  // Files opened with the installed app (desktop file handlers).
+  if ('launchQueue' in window) {
+    window.launchQueue.setConsumer(async (params) => {
+      const handle = params.files?.[0];
+      if (!handle) return;
+      importView.setPendingFile(await handle.getFile());
+      app.go('/import');
+    });
+  }
   await route();
   registerSW();
   // A new day can start while the app is open: refresh counts when we come back.
