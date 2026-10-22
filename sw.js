@@ -2,7 +2,7 @@
 // quickly), cache fallback when offline. Large vendor files are cache-first.
 // Bump VERSION on every release; the old cache is deleted on activate.
 
-const VERSION = 'v0.2.2';
+const VERSION = 'v0.2.3';
 const CACHE = `ankipwa-${VERSION}`;
 const SHELL = [
   './',

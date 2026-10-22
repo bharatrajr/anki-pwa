@@ -51,14 +51,23 @@ export async function render(app, [idStr]) {
   }, h('span', { 'aria-hidden': 'true', html: SEARCH_ICON }), 'Search');
   const readChip = ttsSupported ? h('button', {
     class: 'chip', type: 'button', 'aria-pressed': String(!!speech.enabled), title: 'Read cards aloud',
-    onclick: async (e) => { e.stopPropagation(); speech.enabled = !speech.enabled; await col.saveSettings(); syncChips(); if (speech.enabled) runSpeech(); else stopSpeaking(); },
+    onclick: async (e) => {
+      e.stopPropagation();
+      // On a card with its own audio/{{tts}} the chip mutes that (autoplay); otherwise it toggles read-aloud.
+      const on = !soundOn();
+      if (hasOwnAv()) speech.autoplay = on; else speech.enabled = on;
+      await col.saveSettings(); syncChips();
+      if (on) runSpeech(); else stopAv();
+    },
   }, h('span', { 'aria-hidden': 'true' }, '🔊'), h('span', { class: 'chip-label' }, 'Read')) : null;
   const micChip = recognitionSupported ? h('button', {
     class: 'chip', type: 'button', 'aria-pressed': String(!!voice.enabled), title: 'Answer by voice: say “show”, then again / hard / good / easy',
     onclick: async (e) => { e.stopPropagation(); voice.enabled = !voice.enabled; await col.saveSettings(); syncChips(); if (voice.enabled) runSpeech(); else stopListening(); },
   }, h('span', { 'aria-hidden': 'true' }, '🎤'), h('span', { class: 'chip-label' }, 'Voice')) : null;
+  const hasOwnAv = () => !!(state.rendered && (state.revealed ? state.rendered.aAv : state.rendered.qAv).length);
+  const soundOn = () => (hasOwnAv() ? speech.autoplay !== false : !!speech.enabled);
   const syncChips = () => {
-    readChip?.setAttribute('aria-pressed', String(!!speech.enabled));
+    readChip?.setAttribute('aria-pressed', String(soundOn()));
     micChip?.setAttribute('aria-pressed', String(!!voice.enabled));
     keepAwake(col.settings.keepAwake && (speech.enabled || voice.enabled));
   };
@@ -110,6 +119,7 @@ export async function render(app, [idStr]) {
     if (state.card.flags & 7) flagChip.replaceChildren(h('span', { class: 'flag-dot', style: { background: `var(--flag${state.card.flags & 7})` } }), FLAG_NAMES[state.card.flags & 7]);
     document.getElementById('card-state').textContent = ['New', 'Learning', 'Review', 'Relearning'][state.card.type] || '';
     renderBar();
+    syncChips();
     if (!state.revealed) state.shownAt = performance.now();
     runSpeech();
     const input = doc.getElementById('typeans');
