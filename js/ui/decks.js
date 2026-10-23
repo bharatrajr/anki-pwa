@@ -5,7 +5,7 @@ import { allDeckCounts } from '../sched/queue.js';
 import { DEFAULT_DECK_ID } from '../db/collection.js';
 import { rebuildFiltered, emptyFiltered } from '../sched/filtered.js';
 import { isIOS, isStandalone } from '../util/platform.js';
-import { STARTER, starterOffered, markStarterOffered, addStarterDeck } from '../io/starter.js';
+import { STARTERS, starterOffered, markStarterOffered, addStarterDeck } from '../io/starter.js';
 
 export async function render(app) {
   const col = app.col;
@@ -35,12 +35,12 @@ export async function render(app) {
         h('h2', {}, 'No cards yet'),
         h('p', {}, 'Add your first card, import a deck from Anki (.apkg, .colpkg), a spreadsheet or Quizlet, or restore a backup.'),
         h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '12px' } },
-          h('button', { class: 'btn primary', type: 'button', onclick: () => installStarter(app) }, `Add ${STARTER.name} deck`),
+          h('button', { class: 'btn primary', type: 'button', onclick: () => chooseStarters(app) }, 'Add a ready-made deck…'),
           h('a', { class: 'btn', href: '#/add' }, 'Add a card'),
           h('a', { class: 'btn', href: '#/import' }, 'Import a deck'),
           h('a', { class: 'btn', href: '#/backup' }, 'Restore backup')))
     );
-    if (!starterOffered(col)) offerStarter(app);
+    if (!starterOffered(col)) chooseStarters(app, { firstRun: true });
     return;
   }
 
@@ -104,27 +104,31 @@ function renderBanners(app, el, cardTotal) {
   document.addEventListener('installable', showInstall, { once: true });
 }
 
-// First run: ask once whether to add the bundled starter deck.
-async function offerStarter(app) {
-  const yes = await sheet('Add a starter deck?', (close) => h('div', {},
-    h('p', { style: { marginTop: 0 } }, h('b', {}, STARTER.name), ' — ', STARTER.blurb),
-    h('p', { class: 'small muted' }, 'Optional. You can delete it later from the deck’s ⋮ menu, or add it any time from this screen or Import.'),
+// Pick ready-made decks (all ticked by default). On first run this is asked once.
+async function chooseStarters(app, { firstRun = false } = {}) {
+  const boxes = STARTERS.map((st) => h('input', { type: 'checkbox', checked: true, 'aria-label': st.name }));
+  const chosen = await sheet(firstRun ? 'Add ready-made decks?' : 'Ready-made decks', (close) => h('div', {},
+    h('div', { class: 'list' }, STARTERS.map((st, i) =>
+      h('label', { class: 'switch' }, h('span', {}, h('b', {}, st.name), h('span', { class: 'hint-text', style: { display: 'block' } }, st.blurb)), boxes[i]))),
+    h('p', { class: 'small muted' }, 'Optional. Delete a deck any time from its ⋮ menu; add these again from the deck list or Import.'),
     h('div', { class: 'sheet-actions' },
-      h('button', { class: 'btn', type: 'button', onclick: () => close(false) }, 'Start empty'),
-      h('button', { class: 'btn primary', type: 'button', onclick: () => close(true) }, 'Add deck'))));
-  if (yes) await installStarter(app);
-  else await markStarterOffered(app.col);
+      h('button', { class: 'btn', type: 'button', onclick: () => close([]) }, firstRun ? 'Start empty' : 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => close(STARTERS.filter((_, i) => boxes[i].checked)) }, 'Add'))));
+  if (chosen?.length) await installStarters(app, chosen);
+  else if (firstRun) await markStarterOffered(app.col);
 }
 
-export async function installStarter(app) {
-  toast('Adding the deck…', { ms: 60000 });
+export async function installStarters(app, starters) {
+  let cards = 0;
   try {
-    const r = await addStarterDeck(app.col);
-    toast(`Added ${r.cardsAdded} cards`);
+    for (const st of starters) {
+      toast(`Adding ${st.name}…`, { ms: 60000 });
+      cards += (await addStarterDeck(app.col, st)).cardsAdded;
+    }
+    toast(`Added ${cards} cards`);
   } catch (e) {
     console.error(e);
     toast(String(e.message || e), { ms: 6000 });
-    return;
   }
   app.go('/');
 }

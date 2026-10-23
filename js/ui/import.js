@@ -6,8 +6,8 @@ import { readAnkiPackage } from '../io/anki-read.js';
 import { mergePackage, replaceWithPackage, packageSummary } from '../io/anki-import.js';
 import { parseAnkiText, parseDelimited, parseQuizlet, parseJsonNotes, suggestMapping, importRows } from '../io/text-import.js';
 import { DEFAULT_DECK_ID } from '../db/collection.js';
-import { STARTER } from '../io/starter.js';
-import { installStarter } from './decks.js';
+import { STARTERS } from '../io/starter.js';
+import { installStarters } from './decks.js';
 
 const ACCEPT = '.apkg,.colpkg,.txt,.csv,.tsv,.json,text/plain,text/csv,text/tab-separated-values,application/json,application/zip,application/octet-stream';
 const SHARE_CACHE = 'ankipwa-share';
@@ -31,9 +31,11 @@ export async function render(app) {
           h('button', { class: 'btn primary', type: 'button', onclick: async () => { const f = await pickFile(ACCEPT); if (f) handleFile(f); } }, 'Choose file…'),
           h('button', { class: 'btn', type: 'button', onclick: pasteText }, 'Paste text…')),
         h('p', { class: 'hint-text' }, 'On Android you can also share a file to AnkiPWA from Files, Drive or WhatsApp.')),
-      section('Starter deck',
-        h('p', { style: { marginTop: 0 } }, h('b', {}, STARTER.name), ' — ', STARTER.blurb, ' Cards you already have are not duplicated.'),
-        h('button', { class: 'btn', type: 'button', onclick: () => installStarter(app) }, 'Add starter deck')),
+      section('Ready-made decks',
+        h('p', { class: 'hint-text', style: { marginTop: 0 } }, 'Cards you already have are not duplicated.'),
+        ...STARTERS.map((st) => h('div', { class: 'row', style: { margin: '10px 0', flexWrap: 'nowrap' } },
+          h('span', { class: 'spacer' }, h('b', {}, st.name), h('span', { class: 'hint-text', style: { display: 'block' } }, st.blurb)),
+          h('button', { class: 'btn', type: 'button', onclick: () => installStarters(app, [st]) }, 'Add')))),
     );
   };
 

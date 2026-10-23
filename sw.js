@@ -2,7 +2,7 @@
 // quickly), cache fallback when offline. Large vendor files are cache-first.
 // Bump VERSION on every release; the old cache is deleted on activate.
 
-const VERSION = 'v0.3.1';
+const VERSION = 'v0.3.2';
 const CACHE = `ankipwa-${VERSION}`;
 const SHELL = [
   './',
@@ -56,7 +56,7 @@ const SHELL = [
   './js/ui/browse.js',
   './js/ui/stats.js',
 ];
-const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszip.min.js', './vendor/fzstd.mjs', './decks/cgl-mains.apkg'];
+const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszip.min.js', './vendor/fzstd.mjs', './decks/cgl-mains.apkg', './decks/spoken-english.apkg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
