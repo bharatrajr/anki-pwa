@@ -2,7 +2,7 @@
 // quickly), cache fallback when offline. Large vendor files are cache-first.
 // Bump VERSION on every release; the old cache is deleted on activate.
 
-const VERSION = 'v0.2.3';
+const VERSION = 'v0.3.0';
 const CACHE = `ankipwa-${VERSION}`;
 const SHELL = [
   './',
@@ -34,6 +34,7 @@ const SHELL = [
   './js/io/anki-import.js',
   './js/io/anki-export.js',
   './js/io/text-import.js',
+  './js/io/starter.js',
   './js/search/search.js',
   './js/sched/filtered.js',
   './js/stats/stats.js',
@@ -55,13 +56,13 @@ const SHELL = [
   './js/ui/browse.js',
   './js/ui/stats.js',
 ];
-const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszip.min.js', './vendor/fzstd.mjs'];
+const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszip.min.js', './vendor/fzstd.mjs', './decks/cgl-mains.apkg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(SHELL);
-    // Vendor files are needed only for Anki import/export; don't fail install if one is missing.
+    // Vendor files and the starter deck are needed only for import/export; don't fail install if one is missing.
     await Promise.all(VENDOR.map((u) => cache.add(u).catch(() => {})));
   })());
 });
@@ -129,6 +130,6 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.includes('/vendor/')) event.respondWith(cacheFirst(req));
+  if (url.pathname.includes('/vendor/') || url.pathname.includes('/decks/')) event.respondWith(cacheFirst(req));
   else event.respondWith(networkFirst(req));
 });

@@ -1,10 +1,11 @@
 // Deck list: nested decks with due counts (new · learning · review).
 
-import { h, menuSheet, promptDialog, confirmDialog, toast } from './components.js';
+import { h, menuSheet, promptDialog, confirmDialog, toast, sheet } from './components.js';
 import { allDeckCounts } from '../sched/queue.js';
 import { DEFAULT_DECK_ID } from '../db/collection.js';
 import { rebuildFiltered, emptyFiltered } from '../sched/filtered.js';
 import { isIOS, isStandalone } from '../util/platform.js';
+import { STARTER, starterOffered, markStarterOffered, addStarterDeck } from '../io/starter.js';
 
 export async function render(app) {
   const col = app.col;
@@ -34,10 +35,12 @@ export async function render(app) {
         h('h2', {}, 'No cards yet'),
         h('p', {}, 'Add your first card, import a deck from Anki (.apkg, .colpkg), a spreadsheet or Quizlet, or restore a backup.'),
         h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '12px' } },
-          h('a', { class: 'btn primary', href: '#/add' }, 'Add a card'),
+          h('button', { class: 'btn primary', type: 'button', onclick: () => installStarter(app) }, `Add ${STARTER.name} deck`),
+          h('a', { class: 'btn', href: '#/add' }, 'Add a card'),
           h('a', { class: 'btn', href: '#/import' }, 'Import a deck'),
           h('a', { class: 'btn', href: '#/backup' }, 'Restore backup')))
     );
+    if (!starterOffered(col)) offerStarter(app);
     return;
   }
 
@@ -92,13 +95,38 @@ function renderBanners(app, el, cardTotal) {
         h('button', { class: 'btn', type: 'button', onclick: async () => { app.installPrompt.prompt(); await app.installPrompt.userChoice; app.installPrompt = null; el.querySelector('[data-install]')?.remove(); } }, 'Install')));
     } else if (isIOS() && !sessionStorageGet('iosHintDismissed')) {
       const b = h('div', { class: 'banner', 'data-install': '' },
-        h('span', { class: 'spacer' }, 'Install on iPhone: tap Share ', h('span', { 'aria-hidden': 'true' }, '⎋'), ' then “Add to Home Screen”. Installing also protects your cards from Safari clearing storage.'),
+        h('span', { class: 'spacer' }, 'Install on iPhone: tap Share ', h('span', { 'aria-hidden': 'true', style: { display: 'inline-flex', verticalAlign: '-3px' }, html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>' }), ' then “Add to Home Screen”. Installing also protects your cards from Safari clearing storage.'),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', onclick: () => { sessionStorageSet('iosHintDismissed', '1'); b.remove(); } }, '✕'));
       el.append(b);
     }
   };
   showInstall();
   document.addEventListener('installable', showInstall, { once: true });
+}
+
+// First run: ask once whether to add the bundled starter deck.
+async function offerStarter(app) {
+  const yes = await sheet('Add a starter deck?', (close) => h('div', {},
+    h('p', { style: { marginTop: 0 } }, h('b', {}, STARTER.name), ' — ', STARTER.blurb),
+    h('p', { class: 'small muted' }, 'Optional. You can delete it later from the deck’s ⋮ menu, or add it any time from this screen or Import.'),
+    h('div', { class: 'sheet-actions' },
+      h('button', { class: 'btn', type: 'button', onclick: () => close(false) }, 'Start empty'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => close(true) }, 'Add deck'))));
+  if (yes) await installStarter(app);
+  else await markStarterOffered(app.col);
+}
+
+export async function installStarter(app) {
+  toast('Adding the deck…', { ms: 60000 });
+  try {
+    const r = await addStarterDeck(app.col);
+    toast(`Added ${r.cardsAdded} cards`);
+  } catch (e) {
+    console.error(e);
+    toast(String(e.message || e), { ms: 6000 });
+    return;
+  }
+  app.go('/');
 }
 
 function sessionStorageGet(k) { try { return localStorage.getItem(`ankipwa.${k}`); } catch { return null; } }
