@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   fontScale: 1,
   rolloverHour: 4,
   learnAheadMins: 20,
-  globalLimits: { enabled: false, newPerDay: 20, revPerDay: 200 },
+  globalLimits: { enabled: false, newPerDay: 100, revPerDay: 500 },
   newReviewMix: 'mix', // 'mix' | 'after' | 'before'
   showIntervals: true,
   showRemaining: true,
@@ -43,6 +43,7 @@ export class Collection {
     const db = await openDB(name, MIGRATIONS, idbFactory);
     const c = new Collection(db);
     await c.load();
+    await c.raiseOldDefaultLimits();
     return c;
   }
 
@@ -93,6 +94,25 @@ export class Collection {
     await this.rolloverIfNeeded();
   }
 
+  /** v0.3.1 raised the default limits to 100 new / 500 reviews; move a Default preset still at the old 20 / 200. */
+  async raiseOldDefaultLimits() {
+    if (this.col.limitsV2) return;
+    const p = this.presets.get(DEFAULT_PRESET_ID);
+    if (p && p.newPerDay === 20 && p.revPerDay === 200) {
+      p.newPerDay = DEFAULT_PRESET.newPerDay;
+      p.revPerDay = DEFAULT_PRESET.revPerDay;
+      await this.put('presets', p);
+    }
+    const g = this.settings.globalLimits;
+    if (g && !g.enabled && g.newPerDay === 20 && g.revPerDay === 200) {
+      g.newPerDay = DEFAULT_SETTINGS.globalLimits.newPerDay;
+      g.revPerDay = DEFAULT_SETTINGS.globalLimits.revPerDay;
+      await this.saveMeta('settings', this.settings);
+    }
+    this.col.limitsV2 = true;
+    await this.saveMeta('col', this.col);
+  }
+
   /** v0.2.0 could store a note type under a string id (from genanki decks); give it a number id. */
   async fixStringNotetypeId(nt) {
     const fixed = { ...nt, id: Number(nt.id) || newId() };
@@ -108,7 +128,7 @@ export class Collection {
   async initEmpty() {
     const now = Date.now();
     const t = this.tx(['meta', 'notetypes', 'decks', 'presets'], 'readwrite');
-    t.objectStore('meta').put({ key: 'col', value: { crt: newCollectionCrt(now, 4), nextPos: 1, created: now, mod: now, schemaVersion: 1 } });
+    t.objectStore('meta').put({ key: 'col', value: { crt: newCollectionCrt(now, 4), nextPos: 1, created: now, mod: now, schemaVersion: 1, limitsV2: true } });
     t.objectStore('meta').put({ key: 'settings', value: DEFAULT_SETTINGS });
     for (const nt of stockNotetypes()) t.objectStore('notetypes').put(nt);
     t.objectStore('decks').put(makeDeck(DEFAULT_DECK_ID, 'Default'));
@@ -498,6 +518,8 @@ export class Collection {
     await txDone(t);
     this.notetypes.clear(); this.decks.clear(); this.presets.clear();
     await this.load();
+    // Limits in a restored or imported collection are the user's choice: never raise them later.
+    if (!this.col.limitsV2) { this.col.limitsV2 = true; await this.saveMeta('col', this.col); }
     this.emit('all');
   }
 

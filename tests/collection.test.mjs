@@ -6,7 +6,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Collection } from '../js/db/collection.js';
+import { Collection, DEFAULT_PRESET_ID } from '../js/db/collection.js';
 import { nextCard, answerCard, undo, deckCounts, buryCards, suspendCards, forgetCards, setDueDate, Q } from '../js/sched/queue.js';
 import { buildBackup, parseBackup } from '../js/io/backup.js';
 
@@ -139,8 +139,8 @@ test('50,000 cards: due counts stay fast via the [did,queue,due] index', async (
   const c = await deckCounts(col, deck.id);
   const next = await nextCard(col, deck.id);
   const ms = performance.now() - t0;
-  assert.equal(c.n, 20);
-  assert.equal(c.r, 200);
+  assert.equal(c.n, 100);
+  assert.equal(c.r, 500);
   assert.ok(next);
   assert.ok(ms < 1500, `took ${ms}ms`);
 });
@@ -153,4 +153,25 @@ test('service worker precaches every app module', () => {
     const rel = './' + file.slice(root.length).replace(/\\/g, '/');
     assert.ok(sw.includes(`'${rel}'`), `sw.js SHELL is missing ${rel}`);
   }
+});
+
+test('a Default preset left at the old 20 / 200 limits is raised once on open', async () => {
+  const idb = new IDBFactory();
+  const col = await Collection.open(idb, 'limits');
+  const p = col.presets.get(DEFAULT_PRESET_ID);
+  assert.equal(p.newPerDay, 100);
+  assert.equal(p.revPerDay, 500);
+  // Simulate an install from before v0.3.1.
+  Object.assign(p, { newPerDay: 20, revPerDay: 200 });
+  await col.savePreset(p);
+  delete col.col.limitsV2;
+  await col.saveCol();
+  const again = await Collection.open(idb, 'limits');
+  assert.equal(again.presets.get(DEFAULT_PRESET_ID).newPerDay, 100);
+  assert.equal(again.presets.get(DEFAULT_PRESET_ID).revPerDay, 500);
+  // A user's own choice afterwards is kept.
+  Object.assign(again.presets.get(DEFAULT_PRESET_ID), { newPerDay: 20, revPerDay: 200 });
+  await again.savePreset(again.presets.get(DEFAULT_PRESET_ID));
+  const third = await Collection.open(idb, 'limits');
+  assert.equal(third.presets.get(DEFAULT_PRESET_ID).newPerDay, 20);
 });
