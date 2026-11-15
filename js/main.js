@@ -14,9 +14,10 @@ import * as helpView from './ui/help.js';
 import * as importView from './ui/import.js';
 import * as exportView from './ui/export.js';
 import * as browseView from './ui/browse.js';
+import * as cardsView from './ui/cards.js';
 import * as statsView from './ui/stats.js';
 
-export const APP_VERSION = '0.3.2';
+export const APP_VERSION = '0.3.3';
 
 const routes = [
   [/^\/?$/, decksView, 'decks'],
@@ -30,6 +31,7 @@ const routes = [
   [/^\/import$/, importView, 'backup'],
   [/^\/export$/, exportView, 'backup'],
   [/^\/browse$/, browseView, 'browse'],
+  [/^\/cards$/, cardsView, 'browse'],
   [/^\/stats$/, statsView, 'stats'],
   [/^\/help$/, helpView, 'decks'],
 ];

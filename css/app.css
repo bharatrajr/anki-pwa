@@ -269,6 +269,14 @@ select.input.compact { width: auto; min-height: 40px; padding: 4px 8px; }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0 6px; scrollbar-width: none; }
 .chips .chip { flex: none; }
 .browse-bar { margin: 4px 2px 8px; }
+.btn.compact { min-height: 40px; padding: 0 12px; font-size: 0.9rem; }
+/* card view (browse → Cards): flip and swipe, no grading */
+.cards-nav { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; }
+.cards-nav .nav-btn { min-height: 56px; font-size: 1.6rem; padding: 0; }
+.cards-nav .nav-btn:disabled { opacity: 0.35; }
+.cards-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.swipe-card { touch-action: pan-y; will-change: transform; }
+.cards-view { min-height: calc(100dvh - 200px - env(safe-area-inset-bottom)); touch-action: pan-y; }
 .browse-bar input[type="checkbox"], .browse-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .browse-row { gap: 12px; padding: 4px 12px; }
 .browse-row.suspended { background: color-mix(in srgb, var(--hard) 10%, transparent); }

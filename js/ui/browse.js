@@ -53,14 +53,15 @@ export async function render(app) {
     if (selectAll.checked) for (const r of st.results) st.selected.add(key(r)); else st.selected.clear();
     draw();
   });
-  const toolbar = h('div', { class: 'row browse-bar' }, h('label', { class: 'row', style: { gap: '6px' } }, selectAll, h('span', { class: 'small' }, 'All')), info, sortSel);
+  // Card view: flip through the results (or just the selected ones) like flashcards, no grading.
+  const viewBtn = h('button', { class: 'btn compact', type: 'button', title: 'Flip through these as cards', onclick: () => openCardView() }, '▶ Cards');
+  const toolbar = h('div', { class: 'row browse-bar' }, h('label', { class: 'row', style: { gap: '6px' } }, selectAll, h('span', { class: 'small' }, 'All')), info, viewBtn, sortSel);
   const list = h('ul', { class: 'list card-surface browse-list' });
   const more = h('div', { style: { textAlign: 'center', margin: '12px 0' } });
   const actionBar = h('div', { class: 'selection-bar', hidden: true });
   app.main.append(form, chips, toolbar, list, more, actionBar);
 
   const key = (r) => (st.mode === 'notes' ? r.note.id : r.card.id);
-  const timing = col.timing();
 
   async function run() {
     modeBtn.textContent = st.mode === 'cards' ? '🂠' : '📝';
@@ -69,29 +70,14 @@ export async function render(app) {
     let results;
     try { results = await searchCards(col, st.query); }
     catch (e) { info.textContent = `Search error: ${e.message}`; return; }
-    if (st.mode === 'notes') {
-      const seen = new Map();
-      for (const r of results) {
-        const prev = seen.get(r.note.id);
-        if (!prev || r.card.ord < prev.card.ord) seen.set(r.note.id, { ...r, count: (prev?.count || 0) + 1 });
-        else prev.count++;
-      }
-      results = [...seen.values()];
-    }
-    st.results = results;
+    st.results = st.mode === 'notes' ? groupByNote(results) : results;
     st.selected.clear();
     st.shown = PAGE;
     sortResults();
     draw();
   }
 
-  function sortResults() {
-    const [, cmp] = SORTS[st.sort] || SORTS.sfld;
-    if (st.sort === 'due') st.results.sort((a, b) => dueKey(a.card) - dueKey(b.card));
-    else if (st.sort === 'r') st.results.sort((a, b) => (cardRetrievability(a.card, timing, col) ?? 2) - (cardRetrievability(b.card, timing, col) ?? 2));
-    else st.results.sort(cmp);
-  }
-  const dueKey = (c) => (c.type === 0 ? 1e12 + c.due : c.queue === 1 ? (c.due * 1000 - timing.now) / 86400000 + timing.today : c.odid && c.odue ? c.odue : c.due) + (c.queue < 0 ? 1e13 : 0);
+  const sortResults = () => sortBrowseResults(col, st.results, st.sort);
 
   function dueText(c) {
     const susp = c.queue === -1 ? ' (suspended)' : c.queue === -2 || c.queue === -3 ? ' (buried)' : '';
@@ -127,6 +113,14 @@ export async function render(app) {
       h('a', { class: 'browse-main', href: `#/edit/${r.note.id}?back=${encodeURIComponent(`/browse?q=${encodeURIComponent(st.query)}`)}` },
         h('span', { class: 'browse-title' }, flag ? h('span', { class: 'flag-dot', style: { background: `var(--flag${flag})`, marginRight: '6px' } }) : null, r.note.sfld || '(empty)'),
         h('span', { class: 'small muted browse-meta' }, meta.filter(Boolean).join(' · '))));
+  }
+
+  function openCardView() {
+    if (!st.results.length) return toast('No cards to show');
+    const back = `/browse?q=${encodeURIComponent(st.query)}`;
+    const p = new URLSearchParams({ q: st.query, sort: st.sort, mode: st.mode, back });
+    if (st.selected.size) p.set('q', `${st.mode === 'notes' ? 'nid' : 'cid'}:${[...st.selected].join(',')}`);
+    app.go(`/cards?${p}`);
   }
 
   function selectedCards() {
@@ -247,6 +241,28 @@ export async function render(app) {
 
   await run();
   return () => document.body.classList.remove('selecting');
+}
+
+/** One row per note (its first card), with a card count. */
+export function groupByNote(results) {
+  const seen = new Map();
+  for (const r of results) {
+    const prev = seen.get(r.note.id);
+    if (!prev || r.card.ord < prev.card.ord) seen.set(r.note.id, { ...r, count: (prev?.count || 0) + 1 });
+    else prev.count++;
+  }
+  return [...seen.values()];
+}
+
+/** Sort browser results in place by one of the SORTS keys. */
+export function sortBrowseResults(col, results, sort) {
+  const timing = col.timing();
+  const dueKey = (c) => (c.type === 0 ? 1e12 + c.due : c.queue === 1 ? (c.due * 1000 - timing.now) / 86400000 + timing.today : c.odid && c.odue ? c.odue : c.due) + (c.queue < 0 ? 1e13 : 0);
+  const [, cmp] = SORTS[sort] || SORTS.sfld;
+  if (sort === 'due') results.sort((a, b) => dueKey(a.card) - dueKey(b.card));
+  else if (sort === 'r') results.sort((a, b) => (cardRetrievability(a.card, timing, col) ?? 2) - (cardRetrievability(b.card, timing, col) ?? 2));
+  else results.sort(cmp || SORTS.sfld[1]);
+  return results;
 }
 
 function localGet(k) { try { return localStorage.getItem(`ankipwa.${k}`); } catch { return null; } }
