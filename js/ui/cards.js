@@ -1,12 +1,13 @@
-// Card view for the browser: flip through search results like flashcards, without grading.
-// Tap the card (or Space) to flip; swipe left / → for the next card, swipe right / ← for the previous.
-// Nothing here changes scheduling.
+// Card view for the browser: page through search results like flashcards, without grading.
+// Each card shows question and answer together (the answer side); swipe left / → for the next
+// card, swipe right / ← for the previous. Nothing here changes scheduling.
 
 import { h, toast } from './components.js';
 import { searchCards } from '../search/search.js';
 import { speak, stopSpeaking } from '../speech/speech.js';
 import { renderCard, showInFrame, fitFrame } from '../render/card.js';
 import { groupByNote, sortBrowseResults } from './browse.js';
+import { lookupSheet } from './lookup.js';
 
 const SWIPE_MIN = 60; // px of horizontal travel that counts as a swipe
 
@@ -30,7 +31,7 @@ export async function render(app) {
   const audio = new Audio();
   const speech = col.settings.tts;
 
-  const st = { list: [], i: 0, revealed: false, rendered: null, note: null, nt: null, seq: 0 };
+  const st = { list: [], i: 0, rendered: null, note: null, nt: null, card: null };
 
   const editBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Edit note', title: 'Edit note (e)', onclick: () => editNote() }, '✎');
   app.setActions(editBtn);
@@ -40,11 +41,11 @@ export async function render(app) {
   const topRow = h('div', { class: 'review-top' }, posEl, h('span', { class: 'spacer' }), metaEl);
   const frame = h('iframe', { class: 'card-frame', title: 'Card', sandbox: 'allow-same-origin', 'aria-live': 'polite' });
   const frameWrap = h('div', { class: 'card-frame-wrap swipe-card' }, frame);
-  const hint = h('p', { class: 'small muted', style: { textAlign: 'center', margin: '10px 0 0' } }, 'Tap the card to flip · swipe left or right to move');
+  const hint = h('p', { class: 'small muted', style: { textAlign: 'center', margin: '10px 0 0' } }, 'Swipe left or right to move');
   const prevBtn = h('button', { class: 'btn nav-btn', type: 'button', 'aria-label': 'Previous card (←)', onclick: () => go(-1) }, '‹');
-  const flipBtn = h('button', { class: 'btn primary show-btn', type: 'button', onclick: () => flip() }, 'Show answer');
+  const searchBtn = h('button', { class: 'btn primary show-btn', type: 'button', title: 'Look up this card; copy or add text to the back (s)', onclick: () => lookup() }, '🔍 Search');
   const nextBtn = h('button', { class: 'btn nav-btn', type: 'button', 'aria-label': 'Next card (→)', onclick: () => go(1) }, '›');
-  const bar = h('div', { class: 'answer-bar' }, h('div', { class: 'inner cards-nav' }, prevBtn, flipBtn, nextBtn));
+  const bar = h('div', { class: 'answer-bar' }, h('div', { class: 'inner cards-nav' }, prevBtn, searchBtn, nextBtn));
   const content = h('div', { class: 'cards-view' }, topRow, frameWrap, hint);
   app.main.append(content, bar);
 
@@ -72,7 +73,7 @@ export async function render(app) {
     const card = (await col.getCard(r.card.id)) || r.card;
     const nt = col.notetypes.get(note.ntid);
     if (!nt) { toast('This card’s note type is missing'); return; }
-    Object.assign(st, { note, nt, card, revealed: false });
+    Object.assign(st, { note, nt, card });
     st.rendered = renderCard({ card, note, notetype: nt, deckName: col.decks.get(card.did)?.name || '' });
     await paint();
     if (dir) slideIn(dir);
@@ -87,20 +88,28 @@ export async function render(app) {
   }
 
   async function paint() {
-    const html = st.revealed ? st.rendered.a : st.rendered.q;
-    const doc = await showInFrame(frame, html, {
+    // The answer side already includes the question (via {{FrontSide}}).
+    const doc = await showInFrame(frame, st.rendered.a, {
       css: st.rendered.css, night: app.isDark(), fontScale: col.settings.fontScale, cardOrd: st.card.ord, getMediaUrl,
     });
     frameWrap.dataset.flag = String(st.card.flags & 7);
-    flipBtn.textContent = st.revealed ? 'Show question' : 'Show answer';
     wireFrame(doc);
     autoplay();
   }
 
-  async function flip() {
+  async function lookup() {
     if (!st.rendered) return;
-    st.revealed = !st.revealed;
-    await paint();
+    const q = st.rendered.searchText;
+    if (!q) return toast('Nothing to search on this card');
+    const card = st.card;
+    await lookupSheet(app, {
+      query: q, note: st.note, nt: st.nt, card,
+      onAdded: async () => {
+        if (st.card?.id !== card.id) return;
+        st.rendered = renderCard({ card, note: st.note, notetype: st.nt, deckName: col.decks.get(card.did)?.name || '' });
+        await paint();
+      },
+    });
   }
 
   let busy = false;
@@ -177,7 +186,6 @@ export async function render(app) {
   content.addEventListener('touchmove', onTouchMove, touchOpts);
   content.addEventListener('touchend', onTouchEnd);
   content.addEventListener('touchcancel', onTouchEnd);
-  content.addEventListener('click', (e) => { if (!swiped && e.target !== frame && !e.target.closest('button, a')) flip(); });
 
   function wireFrame(doc) {
     doc.body.style.touchAction = 'pan-y';
@@ -200,8 +208,6 @@ export async function render(app) {
       if (hintLink) { e.preventDefault(); const d = doc.getElementById(hintLink.dataset.hint); if (d) { d.style.display = 'block'; hintLink.style.display = 'none'; fitFrame(frame); } return; }
       const link = t.closest?.('a[href]');
       if (link) { e.preventDefault(); const href = link.getAttribute('href'); if (/^https?:/i.test(href)) window.open(href, '_blank', 'noopener'); return; }
-      if (t.closest?.('input, textarea, select, button, label')) return;
-      flip();
     });
     doc.addEventListener('keydown', (e) => { if (e.target.id !== 'typeans') onKey(e); });
   }
@@ -233,7 +239,7 @@ export async function render(app) {
   function stopAv() { avToken++; audio.pause(); finishFile?.(); stopSpeaking(); }
   function autoplay() {
     stopAv();
-    const own = st.revealed ? st.rendered.aAv : st.rendered.qAv;
+    const own = [...st.rendered.qAv, ...st.rendered.aAv];
     if (own.length && speech.autoplay !== false) playAv(own);
   }
 
@@ -251,7 +257,7 @@ export async function render(app) {
     const k = e.key;
     if (k === 'ArrowRight') { e.preventDefault(); go(1); }
     else if (k === 'ArrowLeft') { e.preventDefault(); go(-1); }
-    else if (k === ' ' || k === 'Enter') { e.preventDefault(); flip(); }
+    else if (k === 's' || k === 'S') { e.preventDefault(); lookup(); }
     else if (k === 'e' || k === 'E') { e.preventDefault(); editNote(); }
     else if (k === 'r' || k === 'R') { e.preventDefault(); autoplay(); }
   }

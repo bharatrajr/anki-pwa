@@ -10,6 +10,7 @@ import { speak, stopSpeaking, listenFor, keepAwake, ttsSupported, recognitionSup
 import { currentRetrievability, REVLOG } from '../sched/scheduler.js';
 import { renderCard, showInFrame, fitFrame } from '../render/card.js';
 import { fmtInterval, fmtDate, dayToDate } from '../util/time.js';
+import { lookupSheet } from './lookup.js';
 
 // Undo history survives leaving and re-entering the review screen during a session.
 export const undoStack = new UndoStack(50);
@@ -46,7 +47,7 @@ export async function render(app, [idStr]) {
   const countsEl = h('div', { class: 'review-counts', 'aria-live': 'polite' });
   const flagChip = h('span', { class: 'chip', hidden: true });
   const searchChip = h('button', {
-    class: 'chip', type: 'button', title: 'Copy the question and search Google', 'aria-label': 'Search the question on Google',
+    class: 'chip', type: 'button', title: 'Look up the question; copy or add text to the back', 'aria-label': 'Search the question',
     onclick: (e) => { e.stopPropagation(); searchQuestion(); },
   }, h('span', { 'aria-hidden': 'true', html: SEARCH_ICON }), 'Search');
   const readChip = ttsSupported ? h('button', {
@@ -331,8 +332,13 @@ export async function render(app, [idStr]) {
     if (!state.rendered) return;
     const q = state.rendered.searchText;
     if (!q) return toast('Nothing to search on this card');
-    try { await navigator.clipboard.writeText(q); } catch {}
-    window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank', 'noopener');
+    const card = state.card;
+    stopListening();
+    await lookupSheet(app, {
+      query: q, note: state.note, nt: state.nt, card,
+      // Show the answer with the new text once something is added to the back.
+      onAdded: async () => { if (state.card?.id === card.id) { state.revealed = true; await showSide(); } },
+    });
   }
 
   // ---------- menu actions ----------
