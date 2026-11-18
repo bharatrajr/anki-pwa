@@ -276,22 +276,6 @@ select.input.compact { width: auto; min-height: 40px; padding: 4px 8px; }
 .cards-nav .nav-btn:disabled { opacity: 0.35; }
 .cards-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .swipe-card { touch-action: pan-y; will-change: transform; }
-.lookup-tools { margin: 10px 0 4px; gap: 8px; flex-wrap: wrap; }
-.lookup-block { border-top: 1px solid var(--line); padding: 10px 0 4px; }
-.lookup-head { display: flex; align-items: flex-start; gap: 8px; }
-.lookup-head h3 { flex: 1; min-width: 0; font-size: 0.95rem; margin: 0 0 2px; }
-.lookup-src { margin: 0 0 6px; }
-.lookup-block h3 a { color: var(--accent); }
-.lookup-para { margin-bottom: 10px; }
-.lookup-para-actions { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
-.lookup-line { display: flex; align-items: flex-start; gap: 6px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
-.lookup-text { flex: 1; min-width: 0; line-height: 1.45; user-select: text; -webkit-user-select: text; }
-.lookup-btn {
-  flex: none; min-width: 52px; min-height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line);
-  background: var(--surface-2); color: var(--text); font-size: 0.85rem; cursor: pointer;
-}
-.lookup-btn.add { min-width: 40px; font-size: 1.05rem; color: var(--accent); font-weight: 700; }
-.lookup-btn.done { color: var(--good); border-color: var(--good); }
 .cards-view { min-height: calc(100dvh - 200px - env(safe-area-inset-bottom)); touch-action: pan-y; }
 .browse-bar input[type="checkbox"], .browse-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .browse-row { gap: 12px; padding: 4px 12px; }

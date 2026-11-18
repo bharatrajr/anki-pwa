@@ -70,16 +70,6 @@ export async function render(app) {
     ] : h('p', { class: 'hint-text' }, isIOS() ? 'Voice answers are not available on iPhone and iPad (Safari does not support speech recognition reliably, especially in installed apps). Tap the buttons instead.' : 'Voice answers are not supported in this browser. Chrome on Android supports them.'),
     wakeLockSupported ? toggle('Keep the screen on while reading aloud or listening', s.keepAwake, async (v) => { s.keepAwake = v; await save(); }) : null);
 
-  // In-app Google results (Search on the review screen and in card view).
-  const keyInput = h('input', { class: 'input', type: 'password', value: s.search.key, placeholder: 'Paste your Serper API key', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off', 'aria-label': 'Serper API key' });
-  keyInput.addEventListener('change', async () => { s.search.key = keyInput.value.trim(); await save(); toast(s.search.key ? 'Search key saved' : 'Search key removed'); });
-  const searchSection = section('Google search',
-    h('label', { class: 'field' }, h('span', {}, 'Search API key (serper.dev)'), keyInput,
-      h('p', { class: 'hint-text' }, 'Shows Google results inside the app, with one-tap Copy and ＋ (add to the back of the card) on every sentence. ',
-        'Get a free key at ', h('a', { href: 'https://serper.dev', target: '_blank', rel: 'noopener' }, 'serper.dev'),
-        ' (2,500 free searches, no card needed), then paste it here. The key stays on this device; searches go from here to serper.dev.')),
-    select('Results from', s.search.gl, [['in', 'India'], ['us', 'United States'], ['gb', 'United Kingdom'], ['au', 'Australia'], ['ca', 'Canada']], async (v) => { s.search.gl = v; await save(); }));
-
   app.main.append(
     section('Appearance',
       select('Theme', s.theme, [['auto', 'Match device'], ['light', 'Light'], ['dark', 'Dark']], async (v) => { s.theme = v; await save(); }),
@@ -93,7 +83,6 @@ export async function render(app) {
       number('All decks: new cards per day', g.newPerDay, { min: 0, max: 9999 }, async (v) => { g.newPerDay = v; await save(); }),
       number('All decks: reviews per day', g.revPerDay, { min: 0, max: 99999 }, async (v) => { g.revPerDay = v; await save(); })),
     speechSection,
-    searchSection,
     section('Storage',
       h('div', { class: 'list-row', style: { padding: '8px 0' } }, h('span', { class: 'spacer' }, 'Storage'), h('span', { class: 'muted small' }, storageText)),
       h('div', { class: 'list-row', style: { padding: '8px 0' } }, h('span', { class: 'spacer' }, 'Protected from automatic clearing'),
@@ -107,7 +96,7 @@ export async function render(app) {
       h('div', { class: 'list-row', style: { padding: '8px 0' } }, h('span', { class: 'spacer' }, 'Version'), h('span', { class: 'muted small' }, app.version)),
       h('div', { class: 'row', style: { padding: '8px 0' } }, h('a', { class: 'btn', href: '#/help' }, 'Help & shortcuts'),
         app.installPrompt ? h('button', { class: 'btn', type: 'button', onclick: async () => { app.installPrompt.prompt(); await app.installPrompt.userChoice; app.installPrompt = null; } }, 'Install app') : null),
-      h('p', { class: 'hint-text' }, 'AnkiPWA is an independent app and is not affiliated with Anki or AnkiWeb. Your cards stay on this device; nothing is uploaded except the searches you run.'),
+      h('p', { class: 'hint-text' }, 'AnkiPWA is an independent app and is not affiliated with Anki or AnkiWeb. Your cards stay on this device; nothing is uploaded.'),
       h('div', { class: 'row', style: { padding: '8px 0 12px' } }, h('button', { class: 'btn danger', type: 'button', onclick: async () => {
         if (!(await confirmDialog('Erase everything?', 'All decks, cards, review history, media and settings on this device will be deleted. Download a backup first if you want to keep them.', { ok: 'Erase', danger: true }))) return;
         await col.replaceAll({});

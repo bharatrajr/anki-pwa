@@ -7,7 +7,6 @@ import { searchCards } from '../search/search.js';
 import { speak, stopSpeaking } from '../speech/speech.js';
 import { renderCard, showInFrame, fitFrame } from '../render/card.js';
 import { groupByNote, sortBrowseResults } from './browse.js';
-import { lookupSheet } from './lookup.js';
 
 const SWIPE_MIN = 60; // px of horizontal travel that counts as a swipe
 
@@ -43,7 +42,7 @@ export async function render(app) {
   const frameWrap = h('div', { class: 'card-frame-wrap swipe-card' }, frame);
   const hint = h('p', { class: 'small muted', style: { textAlign: 'center', margin: '10px 0 0' } }, 'Swipe left or right to move');
   const prevBtn = h('button', { class: 'btn nav-btn', type: 'button', 'aria-label': 'Previous card (←)', onclick: () => go(-1) }, '‹');
-  const searchBtn = h('button', { class: 'btn primary show-btn', type: 'button', title: 'Look up this card; copy or add text to the back (s)', onclick: () => lookup() }, '🔍 Search');
+  const searchBtn = h('button', { class: 'btn primary show-btn', type: 'button', title: 'Copy the question and search Google (s)', onclick: () => searchQuestion() }, '🔍 Search');
   const nextBtn = h('button', { class: 'btn nav-btn', type: 'button', 'aria-label': 'Next card (→)', onclick: () => go(1) }, '›');
   const bar = h('div', { class: 'answer-bar' }, h('div', { class: 'inner cards-nav' }, prevBtn, searchBtn, nextBtn));
   const content = h('div', { class: 'cards-view' }, topRow, frameWrap, hint);
@@ -97,19 +96,12 @@ export async function render(app) {
     autoplay();
   }
 
-  async function lookup() {
+  async function searchQuestion() {
     if (!st.rendered) return;
     const q = st.rendered.searchText;
     if (!q) return toast('Nothing to search on this card');
-    const card = st.card;
-    await lookupSheet(app, {
-      query: q, note: st.note, nt: st.nt, card,
-      onAdded: async () => {
-        if (st.card?.id !== card.id) return;
-        st.rendered = renderCard({ card, note: st.note, notetype: st.nt, deckName: col.decks.get(card.did)?.name || '' });
-        await paint();
-      },
-    });
+    try { await navigator.clipboard.writeText(q); } catch {}
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank', 'noopener');
   }
 
   let busy = false;
@@ -257,7 +249,7 @@ export async function render(app) {
     const k = e.key;
     if (k === 'ArrowRight') { e.preventDefault(); go(1); }
     else if (k === 'ArrowLeft') { e.preventDefault(); go(-1); }
-    else if (k === 's' || k === 'S') { e.preventDefault(); lookup(); }
+    else if (k === 's' || k === 'S') { e.preventDefault(); searchQuestion(); }
     else if (k === 'e' || k === 'E') { e.preventDefault(); editNote(); }
     else if (k === 'r' || k === 'R') { e.preventDefault(); autoplay(); }
   }

@@ -17,7 +17,7 @@ import * as browseView from './ui/browse.js';
 import * as cardsView from './ui/cards.js';
 import * as statsView from './ui/stats.js';
 
-export const APP_VERSION = '0.3.5';
+export const APP_VERSION = '0.3.6';
 
 const routes = [
   [/^\/?$/, decksView, 'decks'],
