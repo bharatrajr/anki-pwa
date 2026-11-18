@@ -2,7 +2,7 @@
 // quickly), cache fallback when offline. Large vendor files are cache-first.
 // Bump VERSION on every release; the old cache is deleted on activate.
 
-const VERSION = 'v0.3.4';
+const VERSION = 'v0.3.5';
 const CACHE = `ankipwa-${VERSION}`;
 const SHELL = [
   './',
@@ -63,9 +63,10 @@ const VENDOR = ['./vendor/sql-wasm.js', './vendor/sql-wasm.wasm', './vendor/jszi
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    await cache.addAll(SHELL);
+    // cache: 'reload' skips the HTTP cache, so an update never mixes old and new files.
+    await cache.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })));
     // Vendor files and the starter deck are needed only for import/export; don't fail install if one is missing.
-    await Promise.all(VENDOR.map((u) => cache.add(u).catch(() => {})));
+    await Promise.all(VENDOR.map((u) => cache.add(new Request(u, { cache: 'reload' })).catch(() => {})));
   })());
 });
 

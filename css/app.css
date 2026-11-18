@@ -278,7 +278,9 @@ select.input.compact { width: auto; min-height: 40px; padding: 4px 8px; }
 .swipe-card { touch-action: pan-y; will-change: transform; }
 .lookup-tools { margin: 10px 0 4px; gap: 8px; flex-wrap: wrap; }
 .lookup-block { border-top: 1px solid var(--line); padding: 10px 0 4px; }
-.lookup-block h3 { font-size: 0.95rem; margin: 0 0 6px; }
+.lookup-head { display: flex; align-items: flex-start; gap: 8px; }
+.lookup-head h3 { flex: 1; min-width: 0; font-size: 0.95rem; margin: 0 0 2px; }
+.lookup-src { margin: 0 0 6px; }
 .lookup-block h3 a { color: var(--accent); }
 .lookup-para { margin-bottom: 10px; }
 .lookup-para-actions { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }

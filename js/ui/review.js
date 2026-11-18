@@ -47,7 +47,7 @@ export async function render(app, [idStr]) {
   const countsEl = h('div', { class: 'review-counts', 'aria-live': 'polite' });
   const flagChip = h('span', { class: 'chip', hidden: true });
   const searchChip = h('button', {
-    class: 'chip', type: 'button', title: 'Look up the question; copy or add text to the back', 'aria-label': 'Search the question',
+    class: 'chip', type: 'button', title: 'Search Google; copy or add text to the back', 'aria-label': 'Search the question',
     onclick: (e) => { e.stopPropagation(); searchQuestion(); },
   }, h('span', { 'aria-hidden': 'true', html: SEARCH_ICON }), 'Search');
   const readChip = ttsSupported ? h('button', {

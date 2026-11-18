@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   tts: { enabled: false, voiceURI: '', rate: 1, autoRevealSecs: 0, readAnswer: true, autoplay: true },
   voice: { enabled: false, lang: 'en-US' },
   keepAwake: true, // while reading aloud / listening
+  search: { key: '', gl: 'in' }, // Serper.dev key for in-app Google results; gl = Google country
 };
 
 export class Collection {

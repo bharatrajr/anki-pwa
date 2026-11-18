@@ -1,12 +1,15 @@
-// "Search" sheet for a card: look the question up, then copy a sentence or paragraph in one
-// tap, or add it straight to the note's back field. Results come from Wikipedia (which allows
-// in-app requests); Google opens in a new tab, and text copied there can be pasted back here.
+// "Search" sheet for a card: Google results inside the app, with one-tap Copy on every sentence
+// and paragraph, and ＋ to add it straight to the note's back field. Google itself can't be
+// framed or fetched from a web app, so results come through serper.dev (a Google results API;
+// the user's own key, saved in Settings). "Full page" pulls a result's whole text in the same way.
+// Text copied in a normal Google tab can also be pasted back and split here.
 
 import { h, toast, sheet } from './components.js';
 import { escapeHtml } from '../render/html.js';
 import { KIND_CLOZE } from '../model/notetypes.js';
 
-const WIKI = 'https://en.wikipedia.org/w/api.php';
+const SERPER = 'https://google.serper.dev/search';
+const SCRAPE = 'https://scrape.serper.dev';
 
 /**
  * Open the search sheet for a card's note.
@@ -14,41 +17,83 @@ const WIKI = 'https://en.wikipedia.org/w/api.php';
  */
 export async function lookupSheet(app, { query, note, nt, card, onAdded }) {
   const col = app.col;
+  const cfg = col.settings.search || {};
   const backIdx = backFieldIndex(nt, card);
   const backName = nt.fields[backIdx]?.name || 'Back';
 
-  await sheet('Search', () => {
+  await sheet('Google search', (close) => {
     const input = h('input', { class: 'input', type: 'search', value: query, 'aria-label': 'Search for', enterkeyhint: 'search', autocomplete: 'off' });
     const results = h('div', { class: 'lookup-results', 'aria-live': 'polite' });
-    const form = h('form', { class: 'search-row', role: 'search', onsubmit: (e) => { e.preventDefault(); wiki(input.value.trim()); } },
+    const form = h('form', { class: 'search-row', role: 'search', onsubmit: (e) => { e.preventDefault(); search(input.value.trim()); } },
       input, h('button', { class: 'btn primary', type: 'submit' }, 'Search'));
     const tools = h('div', { class: 'row lookup-tools' },
-      h('button', { class: 'btn compact', type: 'button', onclick: () => google(input.value.trim()) }, 'Google ↗'),
+      h('button', { class: 'btn compact', type: 'button', onclick: () => openGoogle(input.value.trim()) }, 'Open in Google ↗'),
       h('button', { class: 'btn compact', type: 'button', onclick: () => pasteClipboard() }, '📋 Paste copied text'),
       h('span', { class: 'small muted spacer', style: { textAlign: 'right' } }, `＋ adds to “${backName}”`));
 
-    async function wiki(q) {
+    const msg = (text) => h('p', { class: 'small muted' }, text);
+    const toSettings = () => { close(); app.go('/settings'); };
+
+    async function serper(url, body) {
+      const res = await fetch(url, { method: 'POST', headers: { 'X-API-KEY': cfg.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.status === 401 || res.status === 403) throw Object.assign(new Error('The search key was not accepted. Check it in Settings.'), { key: true });
+      if (res.status === 429) throw new Error('Too many searches right now, or no searches left on this key.');
+      if (!res.ok) throw new Error(`Search failed (HTTP ${res.status})`);
+      return res.json();
+    }
+
+    async function search(q) {
       if (!q) return;
-      results.replaceChildren(h('p', { class: 'small muted' }, 'Searching Wikipedia…'));
+      if (!cfg.key) {
+        results.replaceChildren(h('div', { class: 'lookup-block' },
+          h('p', {}, 'To see Google results here with Copy and ＋ buttons, add a free search key in Settings (one time).'),
+          h('div', { class: 'sheet-actions', style: { justifyContent: 'flex-start' } },
+            h('button', { class: 'btn primary', type: 'button', onclick: toSettings }, 'Open Settings'))));
+        return;
+      }
+      results.replaceChildren(msg('Searching Google…'));
       try {
-        const url = `${WIKI}?${new URLSearchParams({
-          action: 'query', format: 'json', origin: '*', generator: 'search', gsrsearch: q, gsrlimit: '3',
-          prop: 'extracts', exintro: '1', explaintext: '1', exlimit: '3',
-        })}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const pages = Object.values((await res.json()).query?.pages || {}).sort((a, b) => a.index - b.index);
-        if (!pages.length) {
-          results.replaceChildren(h('p', { class: 'small muted' }, 'No Wikipedia results. Try Google, copy what you need, then tap “Paste copied text”.'));
-          return;
+        const data = await serper(SERPER, { q, gl: cfg.gl || 'in', hl: 'en', num: 10 });
+        const out = [];
+        const ab = data.answerBox;
+        if (ab) {
+          const parts = [ab.answer, ab.snippet, ...(ab.snippetHighlighted || [])].filter(Boolean);
+          out.push(block(ab.title || 'Top answer', [...new Set(parts)].join('\n'), ab.link));
         }
-        results.replaceChildren(...pages.map((p) => block(p.title, p.extract, `https://en.wikipedia.org/wiki/${encodeURIComponent(p.title.replaceAll(' ', '_'))}`)));
+        const kg = data.knowledgeGraph;
+        if (kg?.description) out.push(block(kg.title || 'About', kg.description, kg.descriptionLink || kg.website));
+        for (const r of data.organic || []) {
+          const text = [r.snippet, ...(r.sitelinks || []).map((x) => x.snippet)].filter(Boolean).join('\n');
+          out.push(block(r.title, text, r.link, { full: true }));
+        }
+        for (const r of data.peopleAlsoAsk || []) out.push(block(r.question, r.snippet, r.link, { full: true }));
+        results.replaceChildren(...(out.length ? out : [msg('No results. Try other words.')]));
       } catch (e) {
-        results.replaceChildren(h('p', { class: 'small muted' }, `Could not search (${navigator.onLine ? e.message : 'offline'}). Try Google, copy text, then “Paste copied text”.`));
+        results.replaceChildren(h('div', { class: 'lookup-block' },
+          msg(navigator.onLine ? e.message : 'You are offline.'),
+          e.key ? h('button', { class: 'btn compact', type: 'button', onclick: toSettings }, 'Open Settings') : null));
       }
     }
 
-    function google(q) {
+    // Replace a result's snippet with the page's full text.
+    async function loadFull(section, title, link, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Loading…';
+      try {
+        const data = await serper(SCRAPE, { url: link });
+        const paras = String(data.text || '').split(/\n+/).map((x) => x.replace(/\s+/g, ' ').trim())
+          .filter((x) => x.split(' ').length >= 6) // skip menus, buttons and other page furniture
+          .slice(0, 80);
+        if (!paras.length) throw new Error('No readable text on that page');
+        section.replaceWith(block(title, paras.join('\n'), link));
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Full page';
+        toast(e.message || 'Could not load the page');
+      }
+    }
+
+    function openGoogle(q) {
       if (!q) return;
       copyText(q);
       window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, '_blank', 'noopener');
@@ -66,16 +111,23 @@ export async function lookupSheet(app, { query, note, nt, card, onAdded }) {
       area.focus();
     }
 
-    // One source: each paragraph with its own buttons, then each sentence with its own.
-    function block(title, text, href) {
-      const paras = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
-      return h('section', { class: 'lookup-block' },
-        h('h3', {}, href ? h('a', { href, target: '_blank', rel: 'noopener' }, title) : title),
-        paras.map((para) => h('div', { class: 'lookup-para' },
-          h('div', { class: 'lookup-para-actions' },
-            h('span', { class: 'small muted spacer' }, 'Paragraph'),
-            copyBtn(para), addBtn(para)),
-          splitSentences(para).map((s) => h('div', { class: 'lookup-line' }, h('span', { class: 'lookup-text' }, s), copyBtn(s), addBtn(s))))));
+    // One source: each paragraph (with its own buttons when it has several sentences), then each sentence.
+    function block(title, text, href, { full = false } = {}) {
+      const paras = String(text || '').split(/\n+/).map((x) => x.trim()).filter(Boolean);
+      const section = h('section', { class: 'lookup-block' });
+      const fullBtn = full && href ? h('button', { class: 'lookup-btn', type: 'button', title: 'Show the whole page text here', onclick: () => loadFull(section, title, href, fullBtn) }, 'Full page') : null;
+      section.append(
+        h('div', { class: 'lookup-head' },
+          h('h3', {}, href ? h('a', { href, target: '_blank', rel: 'noopener' }, title) : title),
+          fullBtn),
+        href ? h('div', { class: 'lookup-src small muted' }, hostOf(href)) : '',
+        ...paras.map((para) => {
+          const sentences = splitSentences(para);
+          return h('div', { class: 'lookup-para' },
+            sentences.length > 1 ? h('div', { class: 'lookup-para-actions' }, h('span', { class: 'small muted spacer' }, 'Whole paragraph'), copyBtn(para), addBtn(para)) : null,
+            sentences.map((x) => h('div', { class: 'lookup-line' }, h('span', { class: 'lookup-text' }, x), copyBtn(x), addBtn(x))));
+        }));
+      return section;
     }
 
     function copyBtn(text) {
@@ -100,9 +152,13 @@ export async function lookupSheet(app, { query, note, nt, card, onAdded }) {
       return b;
     }
 
-    if (query) wiki(query);
+    if (query) search(query);
     return h('div', {}, form, tools, results);
   });
+}
+
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
 /** Copy to the clipboard; falls back to a hidden textarea where the async API is unavailable. */
